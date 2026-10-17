@@ -1,0 +1,13 @@
+# Secretos y datos locales — NUNCA subir esto al repo
+.env
+.env.local
+config.json
+
+# Base de datos y salidas
+datos/
+salida/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

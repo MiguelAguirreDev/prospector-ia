@@ -1,0 +1,10 @@
+# Núcleo
+requests>=2.31
+beautifulsoup4>=4.12
+openpyxl>=3.1          # para el Excel (opcional, si falta igual genera CSV)
+python-dotenv>=1.0     # para leer el archivo .env
+
+# Búsqueda gratis sin API key (DuckDuckGo).
+# Si este paquete falla en tu sistema, instalá el alternativo:
+#   pip install duckduckgo-search
+ddgs>=5.0

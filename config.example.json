@@ -1,0 +1,68 @@
+{
+  "proveedores": [
+    {
+      "nombre": "openrouter-liquid",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "modelo": "liquid/lfm-2.5-2.6b:free"
+    },
+    {
+      "nombre": "openrouter-super-vl",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "modelo": "nvidia/nemotron-3.5-super-vl:free"
+    },
+    {
+      "nombre": "openrouter-dots",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "modelo": "dots-studio/dots-3-note-preview:free"
+    },
+    {
+      "nombre": "openrouter-cohere",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "modelo": "cohere/north-mini-code:free"
+    },
+    {
+      "nombre": "nvidia",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "api_key_env": "NVIDIA_API_KEY",
+      "modelo": "openai/gpt-oss-20b"
+    },
+    {
+      "nombre": "manual-ejemplo",
+      "base_url": "https://mi-servidor-compatible-openai/v1",
+      "api_key_env": "MI_API_KEY",
+      "modelo": "mi-modelo",
+      "api_key": ""
+    }
+  ],
+  "excluir_dominios": [
+    "infocasas.com.uy",
+    "eldirectorio.co",
+    "guiacomercial.uy",
+    "mercadolibre.com",
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "youtube.com",
+    "google.com",
+    "wikipedia.org"
+  ],
+  "ajustes": {
+    "lote": 20,
+    "max_por_corrida": 20,
+    "idioma": "es",
+    "region": "uy",
+    "usar_ia": true,
+    "modo_rapido": true,
+    "ia_solo_email": true,
+    "timeout": 8,
+    "tiempo_max_ia": 30,
+    "concurrentes": 20,
+    "concurrentes_ia": 4,
+    "ia_max_diario": 45,
+    "max_paginas_por_sitio": 2
+  }
+}

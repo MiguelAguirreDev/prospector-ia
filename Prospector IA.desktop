@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Prospector IA
+Comment=Buscar empresas y extraer emails verificados de su web
+Exec="/home/x/Documentos/Proyecto predeterminado/prospector-ia/encender.sh"
+Path=/home/x/Documentos/Proyecto predeterminado/prospector-ia
+Terminal=true
+Categories=Utility;Network;
+StartupNotify=false
+Icon=system-search
