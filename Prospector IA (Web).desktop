@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Prospector IA (Web)
+Comment=Busca empresas reales y extrae su contacto verificado de su propia web
+Exec=bash -c 'cd "/home/x/Documentos/Proyecto predeterminado/prospector-ia-web" && ./encender.sh'
+Icon=utilities-terminal
+Terminal=true
+Categories=Utility;Office;
+StartupNotify=true

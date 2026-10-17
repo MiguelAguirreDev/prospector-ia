@@ -1,13 +1,14 @@
-# Secretos y datos locales — NUNCA subir esto al repo
-.env
-.env.local
-config.json
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
 
-# Base de datos y salidas
+# Secretos: nunca subir claves
+.env*
+!.env.example
+
+# Estado local (base de datos y exportaciones)
 datos/
 salida/
-
-# Python
-__pycache__/
-*.pyc
-.venv/
