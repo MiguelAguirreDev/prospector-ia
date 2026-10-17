@@ -550,15 +550,59 @@ export default function App() {
   };
 
   const borrarListaItem = async (nombre: string) => {
-    if (!confirm(`¿Eliminar la lista "${nombre}"? Las empresas no se borrarán.`)) return;
-    await fetch('/api/borrar_lista', {
+    if (!confirm(`¿Eliminar la lista "${nombre}"?`)) return;
+    const conEmpresas = confirm(
+      `¿También BORRAR de la base las empresas de "${nombre}"?\n\n` +
+        `Aceptar = borrar lista + empresas\nCancelar = borrar solo la lista`
+    );
+    const res = await fetch('/api/borrar_lista', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre }),
-    });
+      body: JSON.stringify({ nombre, con_empresas: conEmpresas }),
+    }).then(r => r.json());
+    if (conEmpresas && res?.empresas_borradas) {
+      alert(`Se borraron ${res.empresas_borradas} empresa(s) de la base.`);
+    }
     cargarListas();
+    cargarStats();
     if (listaSeleccionada === nombre) {
+      setListaSeleccionada('');
       cargarEmpresas();
+    }
+  };
+
+  const borrarEmpresaItem = async (id: number, nombre: string) => {
+    if (!confirm(`¿Borrar "${nombre}" de la base?\n(podrá volver a aparecer en una búsqueda)`)) return;
+    await fetch('/api/borrar_empresa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    await cargarEmpresas(listaSeleccionada || undefined);
+    cargarStats();
+    cargarListas();
+  };
+
+  const rescatarEmails = async () => {
+    if (corriendo) return;
+    if (
+      !confirm(
+        'Recorre las empresas SIN email: vuelve a visitar su web, las busca en buscadores y usa IA.\n\n¿Continuar?'
+      )
+    )
+      return;
+    setLogs([]);
+    setUltimoLogIndex(0);
+    const res = await fetch('/api/rescatar_emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usar_ia: usarIA }),
+    }).then(r => r.json());
+    if (res.error) {
+      alert(res.error);
+    } else {
+      setCorriendo(true);
+      cargarListas();
     }
   };
 
@@ -1017,6 +1061,20 @@ export default function App() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
+                onClick={rescatarEmails}
+                disabled={corriendo}
+                className="flex items-center gap-2 p-3 rounded-xl bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 disabled:cursor-not-allowed border border-[#30363d] text-xs text-left transition group"
+                title="Recorre empresas sin email, vuelve a rastrear su web, busca en buscadores y usa IA"
+              >
+                <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 group-hover:scale-105 transition">
+                  <Search className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-semibold text-white">Rescatar Emails Faltantes</div>
+                  <div className="text-[10px] text-[#8b949e]">Paso 3-4: buscadores + IA</div>
+                </div>
+              </button>
+              <button
                 onClick={() => exportarGlobal('emails')}
                 className="flex items-center gap-2 p-3 rounded-xl bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs text-left transition group"
               >
@@ -1285,6 +1343,7 @@ export default function App() {
                     <th className="px-3.5 py-2.5 font-medium">Sitio Web</th>
                     <th className="px-3.5 py-2.5 font-medium text-center">Confianza</th>
                     <th className="px-3.5 py-2.5 font-medium text-center">Origen</th>
+                    <th className="px-3.5 py-2.5 font-medium text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#30363d]">
@@ -1424,13 +1483,23 @@ export default function App() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#21262d] text-teal-300">
                             📄 Contacto
                           </span>
-                        ) : e.origen_contacto === 'ia_gemini' ? (
+                        ) : e.origen_contacto === 'ia_gemini' || e.origen_contacto === 'ia' || e.origen_contacto === 'buscador' ? (
                           <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950 text-amber-300 border border-amber-800/40">
                             <Sparkles className="w-2.5 h-2.5" /> IA
                           </span>
                         ) : (
                           <span className="text-[#484f58] text-[10px]">🌐 Web</span>
                         )}
+                      </td>
+
+                      <td className="px-3.5 py-2.5 text-center">
+                        <button
+                          onClick={() => borrarEmpresaItem(e.id, e.nombre || e.dominio)}
+                          className="p-1 rounded text-[#8b949e] hover:text-rose-400 hover:bg-rose-950/30 transition"
+                          title="Borrar esta empresa"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   ))}

@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { esEmailValido } from './crawler.js';
 
 export interface SearchResult {
   titulo: string;
@@ -399,4 +400,59 @@ export async function busquedaMultiFuente(
 
   const duracionSeg = Number(((Date.now() - t0) / 1000).toFixed(2));
   return { resultados: finalResultados, fuentes, duracionSeg };
+}
+
+// ---------------------------------------------------------------------------
+// Paso 3: buscar el email en buscadores (cuando la web no lo tenía o no hay web)
+// ---------------------------------------------------------------------------
+
+const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+
+const EMAIL_DOMINIOS_IGNORADOS = new Set([
+  'example.com', 'sentry.io', 'wixpress.com', 'google.com', 'gstatic.com',
+  'googlemail.com', 'schema.org', 'w3.org', 'facebook.com', 'instagram.com',
+  'twitter.com', 'x.com', 'tiktok.com', 'cloudflare.com', 'bing.com',
+  'duckduckgo.com', 'yahoo.com', 'mojeek.com', 'youtube.com', 'linkedin.com',
+]);
+
+/**
+ * Busca un email público en buscadores (estilo `"<nombre>" "@gmail.com"`).
+ * Devuelve el primero válido hallado en los títulos/descripciones de resultados.
+ */
+export async function buscarEmailEnBuscadores(
+  nombre: string,
+  ciudad: string = '',
+  maxConsultas: number = 3
+): Promise<{ email: string; fuente: string; consulta: string } | null> {
+  const limpio = (nombre || '').trim();
+  if (!limpio || limpio.length < 3) return null;
+
+  const consultas = [
+    `"${limpio}" "@gmail.com"`,
+    `"${limpio}" contacto`,
+    `"${limpio}" ${ciudad} email`.trim(),
+  ].slice(0, Math.max(1, maxConsultas));
+
+  for (const consulta of consultas) {
+    let resultados: SearchResult[] = [];
+    try {
+      const r = await busquedaMultiFuente(consulta, 10);
+      resultados = r.resultados;
+    } catch {
+      continue;
+    }
+    for (const it of resultados) {
+      const texto = `${it.titulo} ${it.descripcion}`;
+      const matches = texto.match(EMAIL_RE) || [];
+      for (const bruto of matches) {
+        const email = bruto.replace(/[.,;:)]+$/, '').trim();
+        const dominioEmail = (email.split('@')[1] || '').toLowerCase();
+        if (!esEmailValido(email)) continue;
+        if (EMAIL_DOMINIOS_IGNORADOS.has(dominioEmail)) continue;
+        if (/\.(png|jpe?g|gif|webp|svg|css|js)$/i.test(email)) continue;
+        return { email, fuente: it.dominio, consulta };
+      }
+    }
+  }
+  return null;
 }

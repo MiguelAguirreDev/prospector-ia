@@ -1,5 +1,5 @@
 import { db, Empresa } from './db.js';
-import { busquedaMultiFuente, FuentesReporte, SearchResult } from './search.js';
+import { busquedaMultiFuente, buscarEmailEnBuscadores, FuentesReporte, SearchResult } from './search.js';
 import { rastrearSitio, normalizarTelefonoUY, CrawlResult } from './crawler.js';
 import { consultarIA } from './ai.js';
 import { exportarTodasLasListas } from './exporter.js';
@@ -471,6 +471,22 @@ export async function procesarConsulta(
             if (!finalDireccion && mm.direccion) finalDireccion = mm.direccion;
           }
 
+          // Paso 3: si la web no tenía email, probamos buscadores ("nombre" "@gmail.com" / "contacto").
+          if (!finalEmail && !debeParar()) {
+            const hallado = await buscarEmailEnBuscadores(
+              finalNombre || item.titulo || dominio,
+              zona,
+              modoRapido ? 1 : 3
+            );
+            if (hallado) {
+              finalEmail = hallado.email;
+              estadoEmail = 'encontrado';
+              agregarLog(
+                `🔎 Buscador encontró email para ${dominio}: ${finalEmail} (vía ${hallado.fuente})`
+              );
+            }
+          }
+
           // IA de respaldo únicamente si no se encontró email
           const invocarIA = usarIA && (!finalEmail || !modoRapido);
 
@@ -655,6 +671,103 @@ export async function lanzarTareaContinua(
   exportarTodasLasListas();
   appState.resultado = `${totalNuevasGlobal} empresas procesadas en modo continuo`;
   agregarLog(`=== Modo Continuo finalizado. Total acumulado: ${totalNuevasGlobal} ===`);
+}
+
+/**
+ * Rescate de emails: recorre las empresas guardadas SIN email, vuelve a visitar su web,
+ * busca el correo en buscadores y (si hace falta) usa la IA. Escribe el resultado de vuelta
+ * en la base. Es el "Paso 4" del flujo (bucle + IA por cada negocio).
+ */
+export async function lanzarTareaRescatarEmails(usarIA: boolean): Promise<void> {
+  const objetivo = db.sinEmail();
+  agregarLog(`=== Rescate de emails: ${objetivo.length} empresa(s) sin email ===`);
+  if (objetivo.length === 0) {
+    agregarLog('Nada que rescatar: todas las empresas ya tienen email.');
+    appState.resultado = '0 emails rescatados';
+    return;
+  }
+
+  monitor.poner({ fase: 'chequeando', consultas_totales: objetivo.length, consulta_n: 0 });
+  let encontrados = 0;
+
+  for (let i = 0; i < objetivo.length; i++) {
+    if (debeParar()) break;
+    const e = objetivo[i];
+    monitor.poner({ consulta_n: i + 1, consulta: e.nombre || e.dominio, procesadas: i });
+    monitor.agregarEnCurso(e.dominio);
+
+    try {
+      let email = '';
+      let origen = '';
+      let textoWeb = '';
+      let emailsCrawl: string[] = [];
+      let telefonos: string[] = [];
+
+      // 1) Re-rastrear su web (portada + contacto)
+      if (e.web && /^https?:\/\//i.test(e.web)) {
+        const crawl = await rastrearSitio(e.web, e.dominio, e.nombre, true, 6000);
+        textoWeb = crawl.textoLimpio || '';
+        emailsCrawl = crawl.emails || [];
+        telefonos = crawl.telefonos || [];
+        if (crawl.emailElegido) {
+          email = crawl.emailElegido;
+          origen = crawl.origenContacto || 'regex_web';
+        }
+      }
+
+      // 2) Buscadores (Paso 3)
+      if (!email) {
+        const f = await buscarEmailEnBuscadores(e.nombre || e.dominio, e.zona, 3);
+        if (f) {
+          email = f.email;
+          origen = 'buscador';
+        }
+      }
+
+      // 3) IA (Paso 4)
+      if (!email && usarIA && (textoWeb || emailsCrawl.length)) {
+        monitor.poner({ ia_llamadas: monitor.data.ia_llamadas + 1 });
+        const iaRes = await consultarIA({
+          titulo: e.nombre,
+          web: e.web,
+          snippet: e.meta_description || '',
+          emailsEncontrados: emailsCrawl,
+          telefonosEncontrados: telefonos,
+          textoWeb,
+        });
+        if (iaRes.duracionSeg > 0) monitor.registrarTiempoIA(iaRes.duracionSeg);
+        if (iaRes.resuelto && iaRes.email) {
+          email = iaRes.email;
+          origen = 'ia_gemini';
+          monitor.poner({ ia_salvados: monitor.data.ia_salvados + 1 });
+        }
+      }
+
+      if (email) {
+        db.guardarEmpresa({
+          dominio: e.dominio,
+          email,
+          estado_email: origen === 'ia_gemini' || origen === 'buscador' ? 'encontrado' : 'verificado',
+          origen_contacto: origen,
+          score_confianza: origen === 'buscador' ? 70 : undefined,
+        });
+        encontrados++;
+        monitor.poner({ con_email: monitor.data.con_email + 1, sin_email: Math.max(0, monitor.data.sin_email - 1) });
+        agregarLog(`✅ Email rescatado para ${e.dominio}: ${email} (${origen})`);
+      } else {
+        agregarLog(`⚪ ${e.dominio}: sigue sin email`);
+      }
+    } catch {
+      // aislamos errores por empresa
+    } finally {
+      monitor.quitarEnCurso(e.dominio);
+    }
+  }
+
+  monitor.poner({ fase: 'inactivo' });
+  const stats = db.estadisticas();
+  agregarLog(`=== Rescate terminado: ${encontrados} email(s) nuevos. Estado: ${JSON.stringify(stats)} ===`);
+  appState.resultado = `${encontrados} emails rescatados`;
 }
 
 export function iniciarTarea(nombre: string, fn: () => Promise<void>): boolean {

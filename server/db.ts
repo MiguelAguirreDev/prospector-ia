@@ -324,16 +324,56 @@ export class BaseDatos {
     return this.data.empresas.filter(e => empresaIds.has(e.id));
   }
 
-  public borrarLista(nombre: string): boolean {
+  public borrarLista(nombre: string, tambienEmpresas: boolean = false): { ok: boolean; empresasBorradas: number } {
     const idx = this.data.listas.findIndex(
       l => l.nombre.toLowerCase() === nombre.trim().toLowerCase()
     );
-    if (idx === -1) return false;
+    if (idx === -1) return { ok: false, empresasBorradas: 0 };
     const listaId = this.data.listas[idx].id;
+
+    let empresasBorradas = 0;
+    if (tambienEmpresas) {
+      const ids = new Set(
+        this.data.empresa_lista.filter(el => el.lista_id === listaId).map(el => el.empresa_id)
+      );
+      // Borrado directo (no usar borrarEmpresa para guardar una sola vez al final)
+      const dominiosABorrar: string[] = [];
+      for (const e of this.data.empresas) {
+        if (ids.has(e.id)) {
+          if (e.dominio) dominiosABorrar.push(e.dominio.toLowerCase());
+          empresasBorradas++;
+        }
+      }
+      this.data.empresas = this.data.empresas.filter(e => !ids.has(e.id));
+      for (const d of dominiosABorrar) delete this.data.dominios[d];
+    }
+
     this.data.listas.splice(idx, 1);
     this.data.empresa_lista = this.data.empresa_lista.filter(el => el.lista_id !== listaId);
+    if (tambienEmpresas) {
+      // Quitar vínculos huérfanos de las empresas borradas
+      const vivas = new Set(this.data.empresas.map(e => e.id));
+      this.data.empresa_lista = this.data.empresa_lista.filter(el => vivas.has(el.empresa_id));
+    }
+    this.guardar();
+    return { ok: true, empresasBorradas };
+  }
+
+  /** Borra una empresa por id, sus vínculos con listas y su dominio (para poder re-descubrirla). */
+  public borrarEmpresa(id: number): boolean {
+    const idx = this.data.empresas.findIndex(e => e.id === id);
+    if (idx === -1) return false;
+    const dominio = (this.data.empresas[idx].dominio || '').toLowerCase();
+    this.data.empresas.splice(idx, 1);
+    this.data.empresa_lista = this.data.empresa_lista.filter(el => el.empresa_id !== id);
+    if (dominio) delete this.data.dominios[dominio];
     this.guardar();
     return true;
+  }
+
+  /** Empresas guardadas que todavía no tienen email (para el rescate). */
+  public sinEmail(): Empresa[] {
+    return this.data.empresas.filter(e => !e.email);
   }
 }
 

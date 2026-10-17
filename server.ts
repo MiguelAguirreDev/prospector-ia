@@ -11,6 +11,7 @@ import {
   iniciarTarea,
   lanzarTareaBuscar,
   lanzarTareaContinua,
+  lanzarTareaRescatarEmails,
   pedirParar,
   agregarLog,
 } from './server/pipeline.js';
@@ -298,8 +299,27 @@ app.post('/api/exportar_lista', (req: Request, res: Response) => {
 
 app.post('/api/borrar_lista', (req: Request, res: Response) => {
   const nombre = (req.body.nombre || '').trim();
-  const ok = db.borrarLista(nombre);
-  res.json({ ok, nombre });
+  const conEmpresas = Boolean(req.body.con_empresas);
+  const r = db.borrarLista(nombre, conEmpresas);
+  agregarLog(
+    r.ok
+      ? `🗑️ Lista "${nombre}" eliminada${conEmpresas ? ` + ${r.empresasBorradas} empresa(s)` : ''}`
+      : `[!] No se encontró la lista "${nombre}"`
+  );
+  res.json({ ok: r.ok, nombre, empresas_borradas: r.empresasBorradas });
+});
+
+app.post('/api/borrar_empresa', (req: Request, res: Response) => {
+  const id = Number(req.body.id);
+  if (!id) return res.status(400).json({ ok: false, error: 'Falta el id de la empresa.' });
+  const ok = db.borrarEmpresa(id);
+  res.json({ ok });
+});
+
+app.post('/api/rescatar_emails', (req: Request, res: Response) => {
+  const usarIA = req.body.usar_ia !== undefined ? Boolean(req.body.usar_ia) : true;
+  const ok = iniciarTarea('Rescatando emails faltantes...', () => lanzarTareaRescatarEmails(usarIA));
+  res.json(ok ? { ok: true } : { error: 'Ya hay una tarea corriendo.' });
 });
 
 app.post('/api/check', (req: Request, res: Response) => {
