@@ -338,6 +338,7 @@ export default function App() {
   const [zona, setZona] = useState<string>('');
   const [usarIA, setUsarIA] = useState<boolean>(true);
   const [modoRapido, setModoRapido] = useState<boolean>(true);
+  const [usarMaps, setUsarMaps] = useState<boolean>(false);
   const [listaNombre, setListaNombre] = useState<string>('');
   const [listaAuto, setListaAuto] = useState<boolean>(true);
 
@@ -453,6 +454,7 @@ export default function App() {
       zona,
       usar_ia: usarIA,
       modo_rapido: modoRapido,
+      usar_maps: usarMaps,
       lista_nombre: listaNombre,
       lista_auto: listaAuto,
     };
@@ -486,6 +488,7 @@ export default function App() {
       zona,
       usar_ia: usarIA,
       modo_rapido: modoRapido,
+      usar_maps: usarMaps,
       lista_nombre: listaNombre,
       lista_auto: listaAuto,
     };
@@ -756,6 +759,20 @@ export default function App() {
                   className="rounded text-emerald-500"
                 />
                 <span>⚡ 15 hilos en paralelo</span>
+              </label>
+
+              <label className="flex items-center gap-2 text-[#c9d1d9] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={usarMaps}
+                  onChange={e => setUsarMaps(e.target.checked)}
+                  disabled={corriendo}
+                  className="rounded text-emerald-500"
+                />
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-sky-400" /> Buscar también en Google Maps
+                  <span className="text-[10px] text-[#8b949e]">(más lento)</span>
+                </span>
               </label>
             </div>
 

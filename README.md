@@ -43,6 +43,7 @@ Luego abrí `http://127.0.0.1:3000`. Para apagarlo: `Ctrl+C` en la terminal.
 1. **Búsqueda multi-fuente** — Lanza la consulta en varios buscadores **en paralelo**
    y junta los resultados, descartando portales inmobiliarios, redes sociales,
    marketplaces y buscadores (lista de exclusión en `server/search.ts`).
+   *(Opcional: además consulta **Google Maps** abriendo un navegador real — ver más abajo.)*
 2. **Cola de candidatos** — Toma los dominios **nuevos** (los ya vistos se saltan,
    así no repetís empresas entre búsquedas).
 3. **Rastreo de la web** — Entra a cada sitio (portada, y una subpágina de contacto
@@ -58,6 +59,31 @@ Luego abrí `http://127.0.0.1:3000`. Para apagarlo: `Ctrl+C` en la terminal.
 **Modo rápido (por defecto, ON):** todo el rastreo es en paralelo y la IA se usa
 **solo** cuando falta el email. Con el modo rápido apagado, la IA se consulta
 siempre (más lento, más datos).
+
+### Fuente extra: Google Maps (opción)
+
+Marcá **“Buscar también en Google Maps”** y el motor, además de los buscadores,
+**abre Google Maps con un navegador real** (Playwright/Chromium), acepta el aviso de
+cookies, hace scroll y lee cada ficha:
+
+- **nombre**, **teléfono** (celular → se marca **WhatsApp**), **dirección** y **categoría**;
+- y, abriendo el detalle de cada negocio, **su sitio web** (que en la lista de Maps ya no
+  se muestra).
+
+Con ese sitio web, el negocio entra al rastreo normal: se busca el **email** en la web y,
+si no aparece, se usa la **IA** de respaldo. **Maps no da el email**; por eso el correo
+siempre sale de la web del negocio (o queda vacío).
+
+- Si el negocio **no publica web** en Maps, se guarda igual con **teléfono/WhatsApp y
+  dirección** (útil para llamar), y con la IA activada se intenta **descubrir su sitio por
+  nombre** para poder rastrear el email.
+- Es **más lento** (una consulta a Maps tarda ~30–50 s), por eso viene **desactivado**.
+- Para **ver** el navegador mientras busca, en `encender.sh` descomentá
+  `export PROSPECTOR_MAPS_HEADLESS=0`.
+
+> ⚠️ El scraping de Google Maps **va contra los Términos de Servicio de Google** y es
+> frágil (Google cambia el diseño). Se incluye como fuente de descubrimiento adicional.
+
 
 ---
 
@@ -159,6 +185,7 @@ prospector-ia-web/
 ├── server.ts            # servidor Express + Vite (puerto 3000) + endpoints /api/*
 ├── server/
 │   ├── search.ts        # búsqueda multi-fuente en paralelo
+│   ├── maps.ts          # fuente Google Maps (navegador Playwright/Chromium)
 │   ├── crawler.ts       # rastreo + schema.org + regex + validación de email
 │   ├── pipeline.ts      # orquestación, monitor en vivo, modo continuo
 │   ├── db.ts            # base de datos (JSON local)
@@ -168,7 +195,8 @@ prospector-ia-web/
 ├── datos/               # base de datos local (no se sube)
 ├── salida/              # exportaciones CSV/Excel (no se sube)
 ├── encender.sh          # lanzador
-└── probar_ia.ts         # prueba rápida de la IA: npx tsx probar_ia.ts
+├── probar_ia.ts         # prueba rápida de la IA: npx tsx probar_ia.ts
+└── probar_maps.ts       # prueba de la fuente Maps: npx tsx probar_maps.ts
 ```
 
 ---
@@ -178,6 +206,7 @@ prospector-ia-web/
 - **Mojeek/Yahoo** a veces bloquean o no devuelven resultados.
 - El **nombre** de la empresa depende del `<title>` si no hay `schema.org`.
 - Puede colarse alguna página que no sea de una empresa (falta un filtro de relevancia más fino).
-- **Uruguay** casi no tiene datos de mapas útiles para este rubro.
+- **Google Maps** es más lento (~30–50 s por consulta) y es scraping: Google cambia el DOM
+  y puede bloquear. Maps **no da email**; el correo siempre se busca en la web del negocio.
 - Los buscadores que usan **imágenes con el correo** no se leen (la IA ayuda en algunos casos).
 - La base JSON es simple; con volúmenes muy grandes convendría SQLite/Postgres.

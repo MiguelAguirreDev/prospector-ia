@@ -6,6 +6,16 @@ export interface SearchResult {
   descripcion: string;
   dominio: string;
   fuente?: string;
+  /** Datos crudos de Google Maps, si el candidato viene de ahí. */
+  maps?: {
+    telefono?: string;
+    direccion?: string;
+    categoria?: string;
+    rating?: string;
+    resenas?: string;
+  };
+  /** true si el negocio vino de Maps pero NO tiene sitio web (solo teléfono/dirección). */
+  solo_maps?: boolean;
 }
 
 const UA =

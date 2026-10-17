@@ -39,6 +39,16 @@ if [ ! -d node_modules ]; then
   fi
 fi
 
+# Navegador para Google Maps (solo si falta)
+if ! ls "$HOME"/.cache/ms-playwright/chromium* >/dev/null 2>&1; then
+  echo "🌐 Instalando el navegador para Google Maps (una sola vez, ~170 MB)..."
+  npx playwright install chromium || echo "⚠️  No se pudo instalar Chromium; la opción de Google Maps quedará deshabilitada."
+  echo
+fi
+
+# Para VER el navegador de Maps mientras busca, descomentá la línea de abajo:
+# export PROSPECTOR_MAPS_HEADLESS=0
+
 # Claves de IA
 if [ ! -f .env ] || ! grep -qE '^(GEMINI_API_KEY|OPENROUTER_API_KEY|NVIDIA_API_KEY)=.+' .env 2>/dev/null; then
   echo "💡 No hay claves de IA configuradas en .env (el motor funciona igual, solo sin IA)."

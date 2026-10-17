@@ -3,6 +3,7 @@ import { busquedaMultiFuente, FuentesReporte, SearchResult } from './search.js';
 import { rastrearSitio, normalizarTelefonoUY, CrawlResult } from './crawler.js';
 import { consultarIA } from './ai.js';
 import { exportarTodasLasListas } from './exporter.js';
+import { buscarMaps, MapsNegocio, normaliza } from './maps.js';
 
 export interface MonitorState {
   fase: 'inactivo' | 'buscando' | 'procesando' | 'chequeando' | 'esperando';
@@ -213,13 +214,69 @@ function listasPara(consulta: string, listaNombre: string, listaAuto: boolean): 
   return n ? [n] : ['general'];
 }
 
+/** ¿El teléfono (ya normalizado) es un celular uruguayo? (para marcar WhatsApp) */
+function esCelularUY(tel: string): boolean {
+  const d = (tel || '').replace(/\D/g, '');
+  return d.startsWith('09') || d.startsWith('5989');
+}
+
+/** Convierte un negocio de Google Maps en un candidato del pipeline. */
+function mapsASearchResult(m: MapsNegocio): SearchResult {
+  const web = (m.sitio_web || '').trim();
+  let dominio = '';
+  if (web) {
+    dominio = db.normalizarDominio(/^https?:\/\//i.test(web) ? web : `http://${web}`);
+  }
+  const descripcion = [m.categoria, m.direccion].filter(Boolean).join(' · ');
+  const base: SearchResult = {
+    titulo: m.nombre,
+    url: web || m.url || '',
+    descripcion,
+    dominio,
+    fuente: 'google_maps',
+    maps: {
+      telefono: m.telefono || '',
+      direccion: m.direccion || '',
+      categoria: m.categoria || '',
+      rating: m.rating || '',
+      resenas: m.resenas || '',
+    },
+  };
+  if (!dominio) {
+    // Negocio sin web: usamos una clave sintética para deduplicar.
+    base.solo_maps = true;
+    base.dominio = 'maps:' + (normaliza(m.nombre + (m.telefono || '')) || String(Date.now()));
+    base.url = m.url || '';
+  }
+  return base;
+}
+
+/** Para negocios de Maps sin web: intenta hallar su sitio real buscando por nombre. */
+async function descubrirSitioPorNombre(nombre: string, zona: string): Promise<SearchResult | null> {
+  const objetivo = normaliza(nombre).slice(0, 12);
+  if (!objetivo) return null;
+  try {
+    const { resultados } = await busquedaMultiFuente(`${nombre} ${zona || 'Montevideo'}`.trim(), 10);
+    for (const r of resultados) {
+      if (!r.dominio) continue;
+      const t = normaliza(r.titulo);
+      const d = normaliza(r.dominio);
+      if (t.includes(objetivo) || d.includes(objetivo)) return r;
+    }
+  } catch {
+    // sin resultado
+  }
+  return null;
+}
+
 export async function procesarConsulta(
   consulta: string,
   maxNuevos: number,
   zona: string,
   usarIA: boolean,
   modoRapido: boolean,
-  listas: string[]
+  listas: string[],
+  usarMaps: boolean = false
 ): Promise<Empresa[]> {
   monitor.poner({ fase: 'buscando', consulta });
   agregarLog(`🔎 Buscando en fuentes paralelas: "${consulta}" (meta: ${maxNuevos} nuevas)`);
@@ -234,6 +291,32 @@ export async function procesarConsulta(
         .join(', ') +
       ` (${resultados.length} dominios únicos)`
   );
+
+  // Fuente adicional: Google Maps (con navegador real). Trae teléfono/dirección y,
+  // cuando el negocio los publica, el sitio web que luego se rastrea para el email.
+  if (usarMaps) {
+    agregarLog(`🗺️  Google Maps: abriendo navegador y buscando "${consulta}"...`);
+    try {
+      const tMaps = Date.now();
+      const negocios = await buscarMaps(consulta, Math.max(8, Math.min(30, maxNuevos + 6)));
+      const items = negocios.map(mapsASearchResult).filter(r => r.dominio);
+      resultados.unshift(...items);
+      const conWeb = items.filter(i => !i.solo_maps).length;
+      fuentes['google_maps'] = { resultados: items.length, error: false };
+      monitor.poner({
+        fuentes,
+        t_busqueda: duracionSeg + Number(((Date.now() - tMaps) / 1000).toFixed(2)),
+      });
+      agregarLog(
+        `🗺️  Google Maps en ${((Date.now() - tMaps) / 1000).toFixed(1)}s: ${items.length} negocios ` +
+          `(${conWeb} con web, ${items.length - conWeb} solo teléfono)`
+      );
+    } catch (err: any) {
+      fuentes['google_maps'] = { resultados: 0, error: true };
+      monitor.poner({ fuentes });
+      agregarLog(`[!] Google Maps falló: ${err?.message || err}`);
+    }
+  }
 
   // Pre-filtro: descartar ya vistas o ya guardadas
   const pendientes: SearchResult[] = [];
@@ -290,6 +373,66 @@ export async function procesarConsulta(
       lote.map(async item => {
         if (debeParar() || empresasGuardadas.length >= maxNuevos) return;
 
+        // Negocio de Maps SIN web: si el modo IA está activo, intentamos hallarle el
+        // sitio por nombre para poder rastrear el email. Si no, lo guardamos solo con
+        // teléfono/dirección (Maps no da email).
+        if (item.solo_maps) {
+          if (usarIA && !debeParar()) {
+            const hallado = await descubrirSitioPorNombre(item.titulo, zona);
+            if (hallado && hallado.dominio && !db.yaVisto(hallado.dominio)) {
+              item = { ...hallado, maps: item.maps, fuente: 'google_maps+web' };
+              agregarLog(`🗺️  Maps sin web → probamos "${hallado.dominio}" para ${item.titulo}`);
+            }
+          }
+          if (item.solo_maps) {
+            if (!db.reservarDominio(item.dominio)) return;
+            monitor.agregarEnCurso(item.dominio);
+            try {
+              const m = item.maps || {};
+              const tel = normalizarTelefonoUY(m.telefono || '');
+              const wa = esCelularUY(tel) ? tel : '';
+              const nota = [m.rating ? `Maps ★${m.rating}${m.resenas ? ` (${m.resenas})` : ''}` : '', 'sin web en Maps']
+                .filter(Boolean)
+                .join(' · ');
+              const nueva = db.guardarEmpresa(
+                {
+                  nombre: item.titulo,
+                  web: item.url,
+                  dominio: item.dominio,
+                  telefono: tel,
+                  whatsapp: wa,
+                  email: '',
+                  categoria: m.categoria || 'Empresa',
+                  zona: zona || '',
+                  direccion: m.direccion || '',
+                  estado_email: 'sin_email',
+                  score_confianza: 40,
+                  origen_contacto: 'google_maps',
+                  fuente: 'google_maps',
+                  notas: nota,
+                },
+                listas
+              );
+              empresasGuardadas.push(nueva);
+              monitor.poner({
+                procesadas: monitor.data.procesadas + 1,
+                nuevas: monitor.data.nuevas + 1,
+                con_telefono: monitor.data.con_telefono + (tel || wa ? 1 : 0),
+                sin_email: monitor.data.sin_email + 1,
+              });
+              const telIcon = tel ? `📞 ${tel}` : '';
+              const waIcon = wa ? `💬 WA: ${wa}` : '';
+              const dirIcon = m.direccion ? `📍 ${m.direccion}` : '';
+              agregarLog(`+ 🗺️ [maps] ${item.titulo} | ⚪ sin email ${telIcon} ${waIcon} ${dirIcon}`.trim());
+            } catch {
+              db.liberarDominio(item.dominio);
+            } finally {
+              monitor.quitarEnCurso(item.dominio);
+            }
+            return;
+          }
+        }
+
         const dominio = item.dominio;
         if (!db.reservarDominio(dominio)) return;
 
@@ -315,7 +458,18 @@ export async function procesarConsulta(
           let finalTel = crawl.telefonoElegido;
           let finalWa = crawl.whatsappElegido;
           let categoria = crawl.categoria || 'Empresa';
+          let finalDireccion = crawl.direccion || '';
           let estadoEmail = finalEmail ? 'verificado' : 'sin_email';
+
+          // Completar con los datos de Google Maps cuando la web no los tenga.
+          const mm = item.maps;
+          if (mm) {
+            if (!finalNombre) finalNombre = item.titulo;
+            if (!finalTel && mm.telefono) finalTel = normalizarTelefonoUY(mm.telefono);
+            if (!finalWa && finalTel && esCelularUY(finalTel)) finalWa = finalTel;
+            if ((!categoria || categoria === 'Empresa') && mm.categoria) categoria = mm.categoria;
+            if (!finalDireccion && mm.direccion) finalDireccion = mm.direccion;
+          }
 
           // IA de respaldo únicamente si no se encontró email
           const invocarIA = usarIA && (!finalEmail || !modoRapido);
@@ -366,7 +520,7 @@ export async function procesarConsulta(
               emails_secundarios: crawl.emails.slice(1),
               categoria,
               zona: zona || '',
-              direccion: crawl.direccion || '',
+              direccion: finalDireccion,
               meta_description: crawl.metaDescripcion || '',
               estado_email: estadoEmail,
               score_confianza: crawl.scoreConfianza,
@@ -392,7 +546,7 @@ export async function procesarConsulta(
           const waIcon = finalWa ? `💬 WA: ${finalWa}` : '';
           const schemaIcon = crawl.origenContacto === 'schema_org' ? '🏷️ Schema.org' : '';
           const catIcon = `[${categoria}]`;
-          const dirIcon = crawl.direccion ? `📍 ${crawl.direccion}` : '';
+          const dirIcon = finalDireccion ? `📍 ${finalDireccion}` : '';
           agregarLog(`+ [${dominio}] ${catIcon} ${finalNombre} | ${emailIcon} ${telIcon} ${waIcon} ${schemaIcon} ${dirIcon}`.trim());
         } catch {
           // Si falló por red transitoria, liberar para no descartar para siempre
@@ -414,7 +568,8 @@ export async function lanzarTareaBuscar(
   usarIA: boolean,
   listaNombre: string,
   listaAuto: boolean,
-  modoRapido: boolean
+  modoRapido: boolean,
+  usarMaps: boolean = false
 ): Promise<void> {
   let totalNuevas = 0;
   agregarLog(`=== Iniciando búsqueda de ${consultas.length} consulta(s) a alta velocidad ===`);
@@ -428,7 +583,7 @@ export async function lanzarTareaBuscar(
       consultas_totales: consultas.length,
     });
 
-    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas);
+    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps);
     totalNuevas += guardadas.length;
     agregarLog(`-> ${guardadas.length} nuevas de "${c}" (listas: ${listas.join(', ')})`);
   }
@@ -452,7 +607,8 @@ export async function lanzarTareaContinua(
   autoBarrios: boolean,
   listaNombre: string,
   listaAuto: boolean,
-  modoRapido: boolean
+  modoRapido: boolean,
+  usarMaps: boolean = false
 ): Promise<void> {
   const listaConsultas = autoBarrios ? generarConsultasAuto() : consultas;
   agregarLog(
@@ -475,7 +631,7 @@ export async function lanzarTareaContinua(
         consultas_totales: listaConsultas.length,
       });
 
-      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas);
+      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps);
       nuevasEnEstaVuelta += guardadas.length;
       totalNuevasGlobal += guardadas.length;
       agregarLog(`[Vuelta ${vuelta}] -> ${guardadas.length} nuevas de "${c}"`);
