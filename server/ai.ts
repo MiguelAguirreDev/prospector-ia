@@ -205,6 +205,7 @@ export async function consultarIA(
 REGLAS ESTRICTAS:
 1. No inventes nada; usá solo la información recibida.
 2. Si vas a sugerir un email, DEBE aparecer literalmente en los emails encontrados o en el texto visible de la web provisto. Si no hay email real, dejá "" (cadena vacía).
+4. DESCARTA estrictamente correos técnicos/plataforma: no aceptes correos de dominios como wixpress.com, sentry.io, googleapis.com, mailgun.org, sendgrid.net, cloudflare.com, amazonaws.com, onesignal.com. Tampoco accepts @example.com o placeholder.
 3. Devolvé ÚNICAMENTE un objeto JSON válido con este formato:
 {
   "es_objetivo": true,

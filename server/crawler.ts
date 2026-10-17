@@ -10,18 +10,33 @@ const TEL_RE = /(?:\+?598[\s\-]?)?(?:0?9[1-9][\s\-]?\d{3}[\s\-]?\d{3}|[24]\d{3}[
 const EMAILS_IGNORAR = [
   'example.com',
   'sentry',
+  'sentry.io',
   'wixpress',
+  'wixpress.com',
   'googleapis',
+  'googleapis.com',
   'domain.com',
   'email.com',
   'tudominio',
   '@2x',
   '@3x',
-  'sentry.io',
   'cloudflare.com',
   'yourdomain.com',
   'sitename.com',
   'test.com',
+  'placeholder.com',
+  'no-reply',
+  'noreply',
+  'donotreply',
+  'info@example',
+  'admin@example',
+  'mailgun.org',
+  'sendgrid.net',
+  'amazonaws.com',
+  'onesignal.com',
+  'googletagmanager.com',
+  'fbsbx.com',
+  'cdn.com',
 ];
 
 const EXT_BASURA = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.css', '.js', '.ico', '.pdf', '.zip'];
@@ -29,15 +44,24 @@ const EXT_BASURA = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.css', '.
 const PISTAS_CONTACTO = [
   'contact',
   'contacto',
+  'contactanos',
+  'contactate',
   'nosotros',
+  'nosotras',
   'quienes',
   'quienes-somos',
+  'sobre',
+  'acerca',
   'about',
   'empresa',
+  'institucional',
   'equipo',
-  'info',
+  'servicios',
+  'ubicacion',
   'donde-estamos',
   'sucursales',
+  'info',
+  'ayuda',
 ];
 
 const EN_VENTA_RE = /for sale|domain is for sale|este dominio.{0,25}(en venta|a la venta)|compr[áa] (este |el )?dominio|buy this domain|domain parking|parked free|sedo|afternic|godaddy|precio de venta del dominio/i;
@@ -622,7 +646,7 @@ export async function rastrearSitio(
             }
           } catch {}
         }
-        if (contactLinks.length >= 2) return false;
+        if (contactLinks.length >= 3) return false;
       });
 
       if (contactLinks.length > 0) {
