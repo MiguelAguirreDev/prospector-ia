@@ -365,6 +365,7 @@ export default function App() {
   const [autoBarrios, setAutoBarrios] = useState<boolean>(false);
   const [maxPorTanda, setMaxPorTanda] = useState<number>(20);
   const [zona, setZona] = useState<string>('');
+  const [zonas, setZonas] = useState<string>('');
   const [usarIA, setUsarIA] = useState<boolean>(false);
   const [modoRapido, setModoRapido] = useState<boolean>(true);
   const [usarMaps, setUsarMaps] = useState<boolean>(true);
@@ -648,11 +649,24 @@ export default function App() {
       return;
     }
 
+    // Generar consultas por zona (si se especificaron zonas, combinar cada consulta con cada zona)
+    const zonasList = zonas.split(/[,\n;]+/).map(z => z.trim()).filter(Boolean);
+    let consultasBase = lineas;
+    if (zonasList.length > 0 && lineas.length > 0) {
+      const combinadas: string[] = [];
+      for (const q of lineas) {
+        for (const z of zonasList) {
+          combinadas.push(`${q} ${z}`);
+        }
+      }
+      consultasBase = combinadas;
+    }
+
     // Agregar filtros/condiciones a cada consulta
     const filtro = filtrosCondiciones.trim();
     const consultasConFiltro = filtro
-      ? lineas.map(l => `${l} ${filtro}`)
-      : lineas;
+      ? consultasBase.map(l => `${l} ${filtro}`)
+      : consultasBase;
 
     const payload = {
       consultas: consultasConFiltro,
@@ -691,11 +705,24 @@ export default function App() {
       return;
     }
 
+    // Generar consultas por zona (si se especificaron zonas, combinar cada consulta con cada zona)
+    const zonasList = zonas.split(/[,\n;]+/).map(z => z.trim()).filter(Boolean);
+    let consultasBase = lineas;
+    if (zonasList.length > 0 && lineas.length > 0) {
+      const combinadas: string[] = [];
+      for (const q of lineas) {
+        for (const z of zonasList) {
+          combinadas.push(`${q} ${z}`);
+        }
+      }
+      consultasBase = combinadas;
+    }
+
     // Agregar filtros/condiciones a cada consulta
     const filtro = filtrosCondiciones.trim();
     const consultasConFiltro = filtro
-      ? lineas.map(l => `${l} ${filtro}`)
-      : lineas;
+      ? consultasBase.map(l => `${l} ${filtro}`)
+      : consultasBase;
 
     const payload = {
       consultas: consultasConFiltro,
@@ -1171,6 +1198,20 @@ export default function App() {
                   placeholder="Ej: Pocitos"
                   className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-[#8b949e] mb-1">Zonas a recorrer (una por línea o separadas por coma)</label>
+                <textarea
+                  value={zonas}
+                  onChange={e => setZonas(e.target.value)}
+                  disabled={corriendo}
+                  rows={3}
+                  placeholder={"Montevideo, Canelones, Maldonado\nPocitos, Carrasco, Cordón"}
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white resize-y"
+                />
+                <p className="text-[10px] text-[#8b949e] mt-1">
+                  Si ponés zonas, se generan búsquedas por cada zona en orden. Si no, usa la zona de arriba.
+                </p>
               </div>
               <div>
                 <label className="block text-xs text-[#8b949e] mb-1">Filtros / Condiciones (se agregan a cada búsqueda)</label>
