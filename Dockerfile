@@ -37,6 +37,9 @@ RUN npx playwright install chromium
 # Copiar el resto del código
 COPY . .
 
+# Build del frontend (Vite)
+RUN npm run build
+
 # Crear directorio de datos
 RUN mkdir -p datos salida
 
