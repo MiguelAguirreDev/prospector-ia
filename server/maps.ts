@@ -174,7 +174,8 @@ const BRAVE_PATH = process.env.BRAVE_PATH || (fs.existsSync('/usr/bin/brave-brow
 // Tu perfil real de Brave (donde ya estás logueado en Google)
 const BRAVE_USER_DATA_DIR = process.env.BRAVE_USER_DATA_DIR || '/home/x/.config/BraveSoftware/Brave-Browser';
 // Perfil dedicado de respaldo (si tu perfil de Brave está en uso)
-const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
+// Perfil dedicado fuera del proyecto para que Vite no detecte cambios y recargue la página
+const USER_DATA_DIR = path.resolve(process.env.HOME || '/home/x', '.config', 'Prospector', 'maps-profile');
 
 let contexto: any = null; // BrowserContext persistente
 let lanzando: Promise<any> | null = null;
