@@ -170,21 +170,19 @@ function analizarLineas(
 // ---------------------------------------------------------------------------
 
 const BRAVE_PATH = '/usr/bin/brave-browser';
-// Perfil dedicado (no usamos el perfil del usuario para evitar conflictos si Brave está abierto)
+// Perfil dedicado en datos/maps-profile (se reutiliza entre búsquedas)
 const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
-let contexto: any = null; // BrowserContext persistente (con cookies/sesión)
+let contexto: any = null; // BrowserContext persistente
 let lanzando: Promise<any> | null = null;
 
 async function getContexto(headless: boolean): Promise<any> {
-  // Verificar si el contexto existente sigue vivo
+  // Si ya hay contexto vivo, lo reusamos
   if (contexto) {
     try {
-      // Probar si el contexto responde (sin crear página)
       await contexto.version();
       return contexto;
     } catch {
-      // Contexto cerrado, lo reiniciamos
       contexto = null;
       lanzando = null;
     }
@@ -194,26 +192,50 @@ async function getContexto(headless: boolean): Promise<any> {
       if (!fs.existsSync(USER_DATA_DIR)) {
         fs.mkdirSync(USER_DATA_DIR, { recursive: true });
       }
-      const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
-        headless,
-        executablePath: BRAVE_PATH,
-        args: [
-          '--no-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-site-isolation-trials',
-          '--disable-features=Translate',
-          '--disable-ipc-flooding-protection',
-          '--lang=es-UY,es',
-          '--disable-web-security',
-          '--disable-features=site-per-process',
-        ],
-        locale: 'es-UY',
-        viewport: { width: 1366, height: 900 },
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      });
+      let ctx: any = null;
+      let ultimoError: any = null;
+      // Intentar hasta 3 veces crear el contexto
+      for (let i = 1; i <= 3; i++) {
+        try {
+          ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
+            headless,
+            executablePath: BRAVE_PATH,
+            args: [
+              '--no-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-blink-features=AutomationControlled',
+              '--disable-features=IsolateOrigins,site-per-process',
+              '--disable-site-isolation-trials',
+              '--disable-features=Translate',
+              '--disable-ipc-flooding-protection',
+              '--lang=es-UY,es',
+              '--disable-web-security',
+              '--disable-features=site-per-process',
+              '--disable-background-networking',
+              '--disable-sync',
+              '--disable-default-apps',
+              '--no-first-run',
+            ],
+            locale: 'es-UY',
+            viewport: { width: 1366, height: 900 },
+            userAgent:
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          });
+          break; // éxito
+        } catch (err: any) {
+          ultimoError = err;
+          const msg = err?.message || String(err);
+          // Si el perfil está bloqueado porque Brave está abierto, limpiar y reintentar
+          if (/lock|in use|already|locked/i.test(msg)) {
+            try {
+              await fs.promises.rm(USER_DATA_DIR, { recursive: true, force: true });
+            } catch {}
+            await fs.promises.mkdir(USER_DATA_DIR, { recursive: true });
+          }
+          if (i < 3) await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      if (!ctx) throw ultimoError;
       return ctx;
     })().then(ctx => {
       contexto = ctx;
