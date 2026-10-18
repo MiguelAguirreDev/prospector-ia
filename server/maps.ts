@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { chromium, Browser, Page } from 'playwright';
 
 /**
@@ -164,36 +166,54 @@ function analizarLineas(
 }
 
 // ---------------------------------------------------------------------------
-// Navegador reutilizable
+// Navegador reutilizable (perfil persistente para no pedir login de Google)
 // ---------------------------------------------------------------------------
 
-let navegador: Browser | null = null;
-let lanzando: Promise<Browser> | null = null;
-
 const BRAVE_PATH = '/usr/bin/brave-browser';
+const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
-async function getNavegador(headless: boolean): Promise<Browser> {
-  if (navegador && navegador.isConnected()) return navegador;
+let contexto: any = null; // BrowserContext persistente (con cookies/sesión)
+let lanzando: Promise<any> | null = null;
+
+async function getContexto(headless: boolean): Promise<any> {
+  if (contexto) return contexto;
   if (!lanzando) {
+    // Asegurar que exista el directorio de perfil
+    if (!fs.existsSync(USER_DATA_DIR)) {
+      fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+    }
     lanzando = chromium
-      .launch({
+      .launchPersistentContext(USER_DATA_DIR, {
         headless,
         executablePath: BRAVE_PATH,
-        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
+        args: [
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-site-isolation-trials',
+          '--disable-features=Translate',
+          '--disable-ipc-flooding-protection',
+          '--lang=es-UY,es',
+        ],
+        locale: 'es-UY',
+        viewport: { width: 1366, height: 900 },
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       })
-      .then(b => {
-        navegador = b;
-        return b;
+      .then(ctx => {
+        contexto = ctx;
+        return ctx;
       });
   }
   return lanzando;
 }
 
 export async function cerrarMaps(): Promise<void> {
-  if (navegador) {
-    await navegador.close().catch(() => {});
+  if (contexto) {
+    await contexto.close().catch(() => {});
   }
-  navegador = null;
+  contexto = null;
   lanzando = null;
 }
 
@@ -553,23 +573,17 @@ export async function buscarMaps(
   const enriquecerDetalles = opciones.enriquecerDetalles !== false; // por defecto true (para obtener web)
   const concurrencia = opciones.concurrencia ?? 4;
 
-  const nav = await getNavegador(headless);
-  const context = await nav.newContext({
-    locale: 'es-UY',
-    viewport: { width: 1366, height: 900 },
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-  });
-  const page = await context.newPage();
+  const ctx = await getContexto(headless);
+  const page = await ctx.newPage();
   page.setDefaultTimeout(esperaMs);
 
   try {
     const negocios = await unaBusqueda(page, consulta, maxPorBusqueda, esperaMs);
     if (enriquecerDetalles) {
-      return await enriquecer(context, negocios, maxPorBusqueda, concurrencia);
+      return await enriquecer(ctx, negocios, maxPorBusqueda, concurrencia);
     }
     return negocios.slice(0, maxPorBusqueda);
   } finally {
-    await context.close().catch(() => {});
+    await page.close().catch(() => {});
   }
 }
