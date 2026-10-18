@@ -277,13 +277,33 @@ export async function procesarConsulta(
   modoRapido: boolean,
   listas: string[],
   usarMaps: boolean = false,
-  usarMapsVisible: boolean = false
+  usarMapsVisible: boolean = false,
+  usarBuscadores: boolean = false
 ): Promise<Empresa[]> {
   monitor.poner({ fase: 'buscando', consulta });
   agregarLog(`🔎 Buscando en fuentes paralelas: "${consulta}" (meta: ${maxNuevos} nuevas)`);
 
-  const { resultados, fuentes, duracionSeg } = await busquedaMultiFuente(consulta, Math.max(30, maxNuevos * 2));
-  monitor.poner({ fuentes, t_busqueda: duracionSeg });
+  // Resultados de buscadores web (opcional, por defecto desactivado para ir más rápido)
+  let resultados: SearchResult[] = [];
+  const fuentes: FuentesReporte = {};
+  let duracionSeg = 0;
+
+  if (usarBuscadores) {
+    const r = await busquedaMultiFuente(consulta, Math.max(30, maxNuevos * 2));
+    resultados = r.resultados;
+    Object.assign(fuentes, r.fuentes);
+    duracionSeg = r.duracionSeg;
+    monitor.poner({ fuentes, t_busqueda: duracionSeg });
+    agregarLog(
+      `Buscadores en ${duracionSeg}s: ` +
+        Object.entries(fuentes)
+          .map(([k, v]) => `${k}=${v.error ? 'falló' : v.resultados}`)
+          .join(', ') +
+        ` (${resultados.length} dominios únicos)`
+    );
+  } else {
+    agregarLog(`Buscadores web desactivados (solo Maps).`);
+  }
 
   agregarLog(
     `Buscadores en ${duracionSeg}s: ` +
@@ -638,8 +658,9 @@ export async function lanzarTareaBuscar(
   listaNombre: string,
   listaAuto: boolean,
   modoRapido: boolean,
-  usarMaps: boolean = false,
-  usarMapsVisible: boolean = false
+  usarMaps: boolean = true,
+  usarMapsVisible: boolean = false,
+  usarBuscadores: boolean = false
 ): Promise<void> {
   let totalNuevas = 0;
   agregarLog(`=== Iniciando búsqueda de ${consultas.length} consulta(s) a alta velocidad ===`);
@@ -653,7 +674,7 @@ export async function lanzarTareaBuscar(
       consultas_totales: consultas.length,
     });
 
-    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible);
+    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible, usarBuscadores);
     totalNuevas += guardadas.length;
     agregarLog(`-> ${guardadas.length} nuevas de "${c}" (listas: ${listas.join(', ')})`);
   }
@@ -678,8 +699,9 @@ export async function lanzarTareaContinua(
   listaNombre: string,
   listaAuto: boolean,
   modoRapido: boolean,
-  usarMaps: boolean = false,
-  usarMapsVisible: boolean = false
+  usarMaps: boolean = true,
+  usarMapsVisible: boolean = false,
+  usarBuscadores: boolean = false
 ): Promise<void> {
   const listaConsultas = autoBarrios ? generarConsultasAuto() : consultas;
   agregarLog(
@@ -702,7 +724,7 @@ export async function lanzarTareaContinua(
         consultas_totales: listaConsultas.length,
       });
 
-      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible);
+      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible, usarBuscadores);
       nuevasEnEstaVuelta += guardadas.length;
       totalNuevasGlobal += guardadas.length;
       agregarLog(`[Vuelta ${vuelta}] -> ${guardadas.length} nuevas de "${c}"`);
