@@ -58,6 +58,36 @@ const ESTADO_RE =
 
 const SECUENCIA_TEL = /\+?\d[\d\s\-.]{5,}\d/g;
 
+// Sitios que NO son la web propia del negocio (redes, portales, google)
+const WEB_NO_PROPIA = [
+  'instagram.com', 'facebook.com', 'fb.com', 'wa.me', 'linktr.ee',
+  'tiktok.com', 'linkedin.com', 'twitter.com', 'x.com',
+  'mercadolibre.com', 'mercadolibre.com.uy',
+];
+
+function limpiarUrl(u: string): string {
+  u = (u || '').trim();
+  if (!u) return '';
+  try {
+    const p = new URL(u);
+    // quitar parámetros de tracking y fragmento
+    p.search = '';
+    p.hash = '';
+    return p.toString().replace(/\/+$/, '');
+  } catch {
+    return u;
+  }
+}
+
+function esWebNoPropia(u: string): boolean {
+  try {
+    let host = new URL(u).hostname.toLowerCase().replace(/^www\./, '');
+    return WEB_NO_PROPIA.some(d => host === d || host.endsWith('.' + d));
+  } catch {
+    return true;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Utilidades de parseo
 // ---------------------------------------------------------------------------
@@ -255,7 +285,27 @@ async function rasparTarjeta(tarjeta: any): Promise<MapsNegocio | null> {
       if (telRaw) telefono = telRaw;
     } catch {}
   }
-  const sitio = await datoPorItem(tarjeta, 'authority', 'href');
+  // Sitio web: leer cualquier enlace externo de la tarjeta que no sea Google
+  // ni red social (igual que el scraper de escritorio).
+  let sitio = '';
+  try {
+    const enlaces = tarjeta.locator('a[href]');
+    const nEnlaces = await enlaces.count();
+    for (let i = 0; i < nEnlaces; i++) {
+      const h = ((await enlaces.nth(i).getAttribute('href')) || '').trim();
+      if (h.startsWith('http') && !h.includes('google.') && !h.includes('/maps/')) {
+        const limpia = limpiarUrl(h);
+        if (limpia && !esWebNoPropia(limpia)) {
+          sitio = limpia;
+          break;
+        }
+      }
+    }
+  } catch {}
+  // fallback: data-item-id authority
+  if (!sitio) {
+    sitio = await datoPorItem(tarjeta, 'authority', 'href');
+  }
   let direccion = await datoPorItem(tarjeta, 'address', undefined, ['dirección', 'direccion', 'address']);
   const rating = await primerTexto(tarjeta, SELECTORES_RATING);
   let resenas = (await primerTexto(tarjeta, SELECTORES_RESENAS)).replace(/[()]/g, '');
