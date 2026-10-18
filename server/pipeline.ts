@@ -420,85 +420,34 @@ export async function procesarConsulta(
       lote.map(async item => {
         if (debeParar() || empresasGuardadas.length >= maxNuevos) return;
 
-        // Negocio de Maps SIN web: lo guardamos con teléfono/dirección y, si el modo IA
-        // está activo, buscamos el correo con buscadores + IA (Paso 3-4). Maps no da email.
+        // Negocio de Maps SIN web: se guarda con teléfono/dirección (Maps no da email).
+        // En modo rápido NO se buscan emails (para ir rápido). El usuario puede usar
+        // el botón "Rescatar Emails Faltantes" después para buscarlos con IA.
         if (item.solo_maps) {
-          let emailEncontrado = '';
-          let origenEmail = '';
-          let emailEnWeb = '';
           const m = item.maps || {};
-
-          if (usarIA && !debeParar()) {
-            // Paso 3: buscar en buscadores ("nombre @gmail.com", "nombre contacto", etc.)
-            const hallado = await buscarEmailEnBuscadores(item.titulo, zona, modoRapido ? 1 : 3);
-            if (hallado) {
-              emailEncontrado = hallado.email;
-              origenEmail = 'buscador';
-              agregarLog(`🔎 Buscador encontró email para ${item.titulo}: ${hallado.email} (vía ${hallado.fuente})`);
-            }
-
-            // Paso 2 alternativo: intentar descubrir su sitio web por nombre y rastrearlo para el email.
-            if (!emailEncontrado && !debeParar()) {
-              const sitio = await descubrirSitioPorNombre(item.titulo, zona);
-              if (sitio && sitio.dominio && !db.yaVisto(sitio.dominio)) {
-                try {
-                  const crawl = await rastrearSitio(sitio.url, sitio.dominio, sitio.titulo, !modoRapido, 6000);
-                  if (crawl.emailElegido) {
-                    emailEncontrado = crawl.emailElegido;
-                    origenEmail = crawl.origenContacto || 'regex_web';
-                    emailEnWeb = sitio.url;
-                    agregarLog(`🌐 Web encontrada para ${item.titulo}: ${sitio.url} → email ${emailEncontrado}`);
-                  }
-                } catch {
-                  // si falla el rastreo, seguimos con IA abajo
-                }
-              }
-            }
-
-            // Paso 4: IA de respaldo (sobre la web descubierta o sobre datos de Maps).
-            if (!emailEncontrado && !debeParar()) {
-              const textoWeb = emailEnWeb ? '' : `${item.titulo} ${item.descripcion || ''} ${m.direccion || ''} ${m.telefono || ''}`;
-              const iaRes = await consultarIA({
-                titulo: item.titulo,
-                web: emailEnWeb || item.url,
-                snippet: item.descripcion || '',
-                emailsEncontrados: [],
-                telefonosEncontrados: [m.telefono].filter(Boolean) as string[],
-                textoWeb,
-              });
-              if (iaRes.duracionSeg > 0) monitor.registrarTiempoIA(iaRes.duracionSeg);
-              if (iaRes.resuelto && iaRes.email) {
-                emailEncontrado = iaRes.email;
-                origenEmail = 'ia_gemini';
-                monitor.poner({ ia_salvados: monitor.data.ia_salvados + 1 });
-                agregarLog(`🤖 IA (${iaRes.proveedor || 'n/d'}) resolvió email para ${item.titulo}: ${emailEncontrado}`);
-              }
-            }
-          }
+          const tel = normalizarTelefonoUY(m.telefono || '');
+          const wa = esCelularUY(tel) ? tel : '';
 
           if (!db.reservarDominio(item.dominio)) return;
           monitor.agregarEnCurso(item.dominio);
           try {
-            const m = item.maps || {};
-            const tel = normalizarTelefonoUY(m.telefono || '');
-            const wa = esCelularUY(tel) ? tel : '';
             const nota = [m.rating ? `Maps ★${m.rating}${m.resenas ? ` (${m.resenas})` : ''}` : '', 'sin web en Maps']
               .filter(Boolean)
               .join(' · ');
             const nueva = db.guardarEmpresa(
               {
                 nombre: item.titulo,
-                web: emailEnWeb || item.url,
+                web: item.url,
                 dominio: item.dominio,
                 telefono: tel,
                 whatsapp: wa,
-                email: emailEncontrado,
+                email: '',
                 categoria: m.categoria || 'Empresa',
                 zona: zona || '',
                 direccion: m.direccion || '',
-                estado_email: emailEncontrado ? (origenEmail === 'ia_gemini' ? 'encontrado' : 'verificado') : 'sin_email',
-                score_confianza: emailEncontrado ? (origenEmail === 'buscador' ? 70 : 85) : 40,
-                origen_contacto: origenEmail || 'google_maps',
+                estado_email: 'sin_email',
+                score_confianza: 40,
+                origen_contacto: 'google_maps',
                 fuente: 'google_maps',
                 notas: nota,
               },
@@ -508,15 +457,13 @@ export async function procesarConsulta(
             monitor.poner({
               procesadas: monitor.data.procesadas + 1,
               nuevas: monitor.data.nuevas + 1,
-              con_email: monitor.data.con_email + (emailEncontrado ? 1 : 0),
               con_telefono: monitor.data.con_telefono + (tel || wa ? 1 : 0),
-              sin_email: monitor.data.sin_email + (emailEncontrado ? 0 : 1),
+              sin_email: monitor.data.sin_email + 1,
             });
             const telIcon = tel ? `📞 ${tel}` : '';
             const waIcon = wa ? `💬 WA: ${wa}` : '';
             const dirIcon = m.direccion ? `📍 ${m.direccion}` : '';
-            const emailIcon = emailEncontrado ? `📧 ${emailEncontrado}` : '⚪ sin email';
-            agregarLog(`+ 🗺️ [maps] ${item.titulo} | ${emailIcon} ${telIcon} ${waIcon} ${dirIcon}`.trim());
+            agregarLog(`+ 🗺️ [maps] ${item.titulo} | ⚪ sin email ${telIcon} ${waIcon} ${dirIcon}`.trim());
           } catch {
             db.liberarDominio(item.dominio);
           } finally {
@@ -579,8 +526,18 @@ export async function procesarConsulta(
             }
           }
 
-          // IA de respaldo únicamente si no se encontró email
-          const invocarIA = usarIA && (!finalEmail || !modoRapido);
+          // Paso 3: si la web no tenía email y usarBuscadores está activo, probamos buscadores (solo en modo completo)
+          if (!finalEmail && usarBuscadores && !modoRapido && !debeParar()) {
+            const hallado = await buscarEmailEnBuscadores(finalNombre || item.titulo || dominio, zona, 3);
+            if (hallado) {
+              finalEmail = hallado.email;
+              estadoEmail = 'encontrado';
+              agregarLog(`🔎 Buscador encontró email para ${dominio}: ${finalEmail} (vía ${hallado.fuente})`);
+            }
+          }
+
+          // IA de respaldo únicamente si no se encontró email (solo en modo completo, no en modo rápido)
+          const invocarIA = usarIA && !modoRapido && !finalEmail;
 
           if (invocarIA && !debeParar()) {
             monitor.poner({ ia_llamadas: monitor.data.ia_llamadas + 1 });
