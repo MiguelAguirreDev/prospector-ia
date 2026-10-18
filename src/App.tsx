@@ -30,6 +30,7 @@ import {
   Check,
   CheckCircle,
   XCircle,
+  X,
   AlertTriangle,
   Server,
   AtSign,
@@ -360,6 +361,41 @@ export default function App() {
   const [ultimoLogIndex, setUltimoLogIndex] = useState<number>(0);
   const logRef = useRef<HTMLDivElement>(null);
 
+  // --- Toasts y Modales personalizados (reemplazan alert/confirm) ---
+  const [toasts, setToasts] = useState<{ id: number; tipo: 'ok' | 'warn' | 'err' | 'info'; msg: string; t?: number }[]>([]);
+  const toastId = useRef(0);
+  const toast = (msg: string, tipo: 'ok' | 'warn' | 'err' | 'info' = 'info', segundos = 5) => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, tipo, msg, t: segundos }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), segundos * 1000);
+  };
+  const quitarToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  // Modal de confirmación pendiente (resuelve una promesa)
+  interface ConfirmPending {
+    id: number;
+    titulo: string;
+    msg: string;
+    tipo: 'borrar_lista' | 'borrar_empresa' | 'rescatar' | 'detener' | 'custom';
+    onYes: () => void;
+    onNo?: () => void;
+  }
+  const [confirmPending, setConfirmPending] = useState<ConfirmPending | null>(null);
+  const confirmModal = (titulo: string, msg: string, onYes: () => void, onNo?: () => void, tipo: ConfirmPending['tipo'] = 'custom') => {
+    const id = ++toastId.current;
+    setConfirmPending({ id, titulo, msg, tipo, onYes, onNo });
+  };
+
+  const confirmAsync = (titulo: string, msg: string, tipo: ConfirmPending['tipo'] = 'custom'): Promise<boolean> => {
+    return new Promise((resolve) => {
+      const id = ++toastId.current;
+      setConfirmPending({ id, titulo, msg, tipo,
+        onYes: () => resolve(true),
+        onNo: () => resolve(false)
+      });
+    });
+  };
+
   // Load initial defaults
   useEffect(() => {
     fetch('/api/consultas-default')
@@ -443,7 +479,7 @@ export default function App() {
   const iniciarContinuo = async () => {
     const lineas = consultas.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lineas.length && !autoBarrios) {
-      alert('Por favor ingresá al menos una búsqueda o activá la opción de todos los barrios.');
+      toast('Ingresá al menos una búsqueda o activá la opción de todos los barrios.', 'warn');
       return;
     }
 
@@ -468,7 +504,7 @@ export default function App() {
     }).then(r => r.json());
 
     if (res.error) {
-      alert(res.error);
+      toast(res.error, 'warn');
     } else {
       setCorriendo(true);
       cargarListas();
@@ -478,7 +514,7 @@ export default function App() {
   const iniciarBusquedaSimple = async () => {
     const lineas = consultas.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lineas.length) {
-      alert('Por favor ingresá al menos una búsqueda.');
+      toast('Ingresá al menos una búsqueda.', 'warn');
       return;
     }
 
@@ -502,7 +538,7 @@ export default function App() {
     }).then(r => r.json());
 
     if (res.error) {
-      alert(res.error);
+      toast(res.error, 'warn');
     } else {
       setCorriendo(true);
       cargarListas();
@@ -526,11 +562,11 @@ export default function App() {
 
     if (res.ok) {
       if (tipo === 'emails') {
-        alert('Lotes de emails generados en salida/emails.');
+        toast('Lotes de emails generados en salida/emails.', 'ok');
       } else if (tipo === 'full') {
         window.open('/api/descargar?archivo=empresas.xlsx', '_blank');
       } else {
-        alert('Listas exportadas exitosamente en salida/listas.');
+        toast('Listas exportadas exitosamente en salida/listas.', 'ok');
       }
       cargarStats();
       cargarListas();
@@ -546,22 +582,20 @@ export default function App() {
 
     if (res.ok) {
       window.open(`/api/descargar?archivo=listas/${encodeURIComponent(res.xlsx.split('/').pop() || '')}`, '_blank');
+      toast('Lista exportada a Excel.', 'ok');
     }
   };
 
   const borrarListaItem = async (nombre: string) => {
-    if (!confirm(`¿Eliminar la lista "${nombre}"?`)) return;
-    const conEmpresas = confirm(
-      `¿También BORRAR de la base las empresas de "${nombre}"?\n\n` +
-        `Aceptar = borrar lista + empresas\nCancelar = borrar solo la lista`
-    );
+    if (!(await confirmAsync('¿Eliminar la lista?', `¿Eliminar la lista "${nombre}"? Las empresas no se borrarán.`, 'borrar_lista'))) return;
+    const conEmpresas = await confirmAsync('¿Borrar empresas también?', `¿También BORRAR de la base las empresas de "${nombre}"?\n\nSí = borrar lista y empresas\nNo = borrar solo la lista`, 'borrar_lista');
     const res = await fetch('/api/borrar_lista', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nombre, con_empresas: conEmpresas }),
     }).then(r => r.json());
     if (conEmpresas && res?.empresas_borradas) {
-      alert(`Se borraron ${res.empresas_borradas} empresa(s) de la base.`);
+      toast(`Se borraron ${res.empresas_borradas} empresa(s) de la base.`, 'ok');
     }
     cargarListas();
     cargarStats();
@@ -572,7 +606,7 @@ export default function App() {
   };
 
   const borrarEmpresaItem = async (id: number, nombre: string) => {
-    if (!confirm(`¿Borrar "${nombre}" de la base?\n(podrá volver a aparecer en una búsqueda)`)) return;
+    if (!(await confirmAsync('¿Borrar empresa?', `¿Borrar "${nombre}" de la base?\n(podrá volver a aparecer en una búsqueda)`, 'borrar_empresa'))) return;
     await fetch('/api/borrar_empresa', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -581,15 +615,12 @@ export default function App() {
     await cargarEmpresas(listaSeleccionada || undefined);
     cargarStats();
     cargarListas();
+    toast('Empresa eliminada de la base.', 'ok');
   };
 
   const rescatarEmails = async () => {
     if (corriendo) return;
-    if (
-      !confirm(
-        'Recorre las empresas SIN email: vuelve a visitar su web, las busca en buscadores y usa IA.\n\n¿Continuar?'
-      )
-    )
+    if (!(await confirmAsync('Rescatar emails', 'Recorre las empresas SIN email: vuelve a visitar su web, las busca en buscadores y usa IA.\n\n¿Continuar?', 'rescatar')))
       return;
     setLogs([]);
     setUltimoLogIndex(0);
@@ -599,10 +630,11 @@ export default function App() {
       body: JSON.stringify({ usar_ia: usarIA }),
     }).then(r => r.json());
     if (res.error) {
-      alert(res.error);
+      toast(res.error, 'warn');
     } else {
       setCorriendo(true);
       cargarListas();
+      toast(res.resultado || 'Rescate de emails iniciado.', 'ok');
     }
   };
 
@@ -648,6 +680,85 @@ export default function App() {
   const cand = progreso?.candidatos || 0;
   const hechas = progreso?.procesadas || 0;
   const pct = cand > 0 ? Math.min(100, Math.round((hechas * 100) / cand)) : corriendo ? 100 : 0;
+
+  // ============ COMPONENTE: Toast (notificación temporal) ============
+  const ToastItem = ({ t }: { t: { id: number; tipo: 'ok' | 'warn' | 'err' | 'info'; msg: string; t?: number } }) => {
+    const iconMap: Record<string, any> = {
+      ok: <CheckCircle2 className="w-4 h-4 text-emerald-400" />,
+      warn: <AlertTriangle className="w-4 h-4 text-amber-400" />,
+      err: <AlertCircle className="w-4 h-4 text-rose-400" />,
+      info: <Server className="w-4 h-4 text-blue-400" />,
+    };
+    const colorMap: Record<string, string> = {
+      ok: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+      warn: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+      err: 'bg-rose-500/10 text-rose-300 border-rose-500/30',
+      info: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
+    };
+    return (
+      <div
+        className={`flex items-start gap-3 px-3 py-2 rounded-lg border text-xs text-left animate-in fade-in slide-in-from-top-2 duration-200 ${colorMap[t.tipo]}`}
+        role="alert"
+        aria-label={t.msg}
+      >
+        <div className="mt-0.5 shrink-0">{iconMap[t.tipo]}</div>
+        <div className="leading-none">{t.msg}</div>
+        <button
+          onClick={() => quitarToast(t.id)}
+          className="ml-auto mt-0.5 p-1 rounded hover:bg-[#30363d] text-[#8b949e] hover:text-white transition"
+          title="Cerrar"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  };
+
+  const ToastContainer = () => (
+    <div className="fixed top-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className="pointer-events-auto">
+          <ToastItem t={t} />
+        </div>
+      ))}
+    </div>
+  );
+
+  // ============ COMPONENTE: Modal de confirmación ============
+  const ModalConfirm = () => {
+    if (!confirmPending) return null;
+    const { id, titulo, msg, tipo, onYes, onNo } = confirmPending;
+    const color = tipo === 'borrar_empresa' || tipo === 'borrar_lista' ? 'rose' : 'amber';
+    const bg = color === 'rose' ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-amber-500/10 border-amber-500/30 text-amber-300';
+    const icon = color === 'rose' ? <Trash2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />;
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={(e: any) => { if (e.target === e.currentTarget) onNo?.(); }}>
+        <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-5 max-w-md w-full shadow-2xl animate-in zoom-in duration-200" onClick={(e: any) => e.stopPropagation()}>
+          <div className="flex items-start gap-3 mb-4">
+            <div className={`mt-1 p-1.5 rounded ${bg}`}>{icon}</div>
+            <div>
+              <div className="font-semibold text-white text-sm">{titulo}</div>
+              <div className="text-[#8b949e] text-xs mt-1 whitespace-pre-line">{msg}</div>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => { onNo?.(); setConfirmPending(null); }}
+              className="px-4 py-1.5 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#30363d] text-sm transition"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => { onYes?.(); setConfirmPending(null); }}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${color === 'rose' ? 'bg-rose-600 text-white hover:bg-rose-500' : 'bg-[#30363d] text-white hover:bg-emerald-500'}`}
+            >
+              {tipo === 'detener' ? 'Detener' : tipo === 'rescatar' ? 'Continuar' : tipo === 'borrar_empresa' ? 'Borrar' : 'Aceptar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased">
@@ -1509,6 +1620,11 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* TOASTS Y MODALES */}
+      <ToastContainer />
+      <ModalConfirm />
+
     </div>
   );
 }

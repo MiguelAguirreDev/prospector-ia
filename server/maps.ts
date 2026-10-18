@@ -453,10 +453,12 @@ async function enriquecer(
 export async function buscarMaps(
   consulta: string,
   maxPorBusqueda: number = 20,
-  opciones: { headless?: boolean; esperaMs?: number } = {}
+  opciones: { headless?: boolean; esperaMs?: number; enriquecerDetalles?: boolean; concurrencia?: number } = {}
 ): Promise<MapsNegocio[]> {
   const headless = opciones.headless ?? process.env.PROSPECTOR_MAPS_HEADLESS !== '0';
   const esperaMs = opciones.esperaMs ?? 20000;
+  const enriquecerDetalles = opciones.enriquecerDetalles !== false; // por defecto true (para obtener web)
+  const concurrencia = opciones.concurrencia ?? 4;
 
   const nav = await getNavegador(headless);
   const context = await nav.newContext({
@@ -470,7 +472,10 @@ export async function buscarMaps(
 
   try {
     const negocios = await unaBusqueda(page, consulta, maxPorBusqueda, esperaMs);
-    return await enriquecer(context, negocios, maxPorBusqueda);
+    if (enriquecerDetalles) {
+      return await enriquecer(context, negocios, maxPorBusqueda, concurrencia);
+    }
+    return negocios.slice(0, maxPorBusqueda);
   } finally {
     await context.close().catch(() => {});
   }

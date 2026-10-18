@@ -298,7 +298,12 @@ export async function procesarConsulta(
     agregarLog(`🗺️  Google Maps: abriendo navegador y buscando "${consulta}"...`);
     try {
       const tMaps = Date.now();
-      const negocios = await buscarMaps(consulta, Math.max(8, Math.min(30, maxNuevos + 6)));
+      // Modo rápido: NO abre detalle de cada ficha (lee todo de la tarjeta).
+      // Esto es mucho más rápido (estilo scraper del escritorio).
+      const negocios = await buscarMaps(consulta, Math.max(8, Math.min(30, maxNuevos + 6)), {
+        enriquecerDetalles: false,
+        concurrencia: 2,
+      });
       const items = negocios.map(mapsASearchResult).filter(r => r.dominio);
       resultados.unshift(...items);
       const conWeb = items.filter(i => !i.solo_maps).length;
