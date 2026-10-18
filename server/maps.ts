@@ -170,12 +170,15 @@ function analizarLineas(
 let navegador: Browser | null = null;
 let lanzando: Promise<Browser> | null = null;
 
+const BRAVE_PATH = '/usr/bin/brave-browser';
+
 async function getNavegador(headless: boolean): Promise<Browser> {
   if (navegador && navegador.isConnected()) return navegador;
   if (!lanzando) {
     lanzando = chromium
       .launch({
         headless,
+        executablePath: BRAVE_PATH,
         args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-blink-features=AutomationControlled'],
       })
       .then(b => {
