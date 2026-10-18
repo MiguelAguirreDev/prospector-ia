@@ -342,6 +342,7 @@ export default function App() {
   const [mapsVisible, setMapsVisible] = useState<boolean>(false);
   const [listaNombre, setListaNombre] = useState<string>('');
   const [listaAuto, setListaAuto] = useState<boolean>(true);
+  const [filtrosCondiciones, setFiltrosCondiciones] = useState<string>('');
 
   const [corriendo, setCorriendo] = useState<boolean>(false);
   const [tituloTarea, setTituloTarea] = useState<string>('');
@@ -475,8 +476,14 @@ export default function App() {
       return;
     }
 
+    // Agregar filtros/condiciones a cada consulta
+    const filtro = filtrosCondiciones.trim();
+    const consultasConFiltro = filtro
+      ? lineas.map(l => `${l} ${filtro}`)
+      : lineas;
+
     const payload = {
-      consultas: lineas,
+      consultas: consultasConFiltro,
       auto_barrios: autoBarrios,
       max: maxPorTanda,
       zona,
@@ -511,8 +518,14 @@ export default function App() {
       return;
     }
 
+    // Agregar filtros/condiciones a cada consulta
+    const filtro = filtrosCondiciones.trim();
+    const consultasConFiltro = filtro
+      ? lineas.map(l => `${l} ${filtro}`)
+      : lineas;
+
     const payload = {
-      consultas: lineas,
+      consultas: consultasConFiltro,
       max: maxPorTanda,
       zona,
       usar_ia: usarIA,
@@ -903,6 +916,17 @@ export default function App() {
                   onChange={e => setZona(e.target.value)}
                   disabled={corriendo}
                   placeholder="Ej: Pocitos"
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-[#8b949e] mb-1">Filtros / Condiciones (se agregan a cada búsqueda)</label>
+                <input
+                  type="text"
+                  value={filtrosCondiciones}
+                  onChange={e => setFiltrosCondiciones(e.target.value)}
+                  disabled={corriendo}
+                  placeholder="Ej: egresado UTU EUTM"
                   className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
                 />
               </div>
