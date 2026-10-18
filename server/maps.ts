@@ -169,7 +169,7 @@ function analizarLineas(
 // Navegador reutilizable (perfil dedicado para estabilidad)
 // ---------------------------------------------------------------------------
 
-const BRAVE_PATH = '/usr/bin/brave-browser';
+const BRAVE_PATH = undefined;
 // Perfil dedicado en datos/maps-profile (se reutiliza entre búsquedas)
 const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
@@ -199,7 +199,7 @@ async function getContexto(headless: boolean): Promise<any> {
         try {
           ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
             headless,
-            executablePath: BRAVE_PATH,
+            executablePath: undefined,
             args: [
               '--no-sandbox',
               '--disable-dev-shm-usage',
