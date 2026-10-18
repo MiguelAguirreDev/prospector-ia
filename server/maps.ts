@@ -166,11 +166,13 @@ function analizarLineas(
 }
 
 // ---------------------------------------------------------------------------
-// Navegador reutilizable (perfil dedicado para estabilidad)
+// Navegador reutilizable (perfil de Brave del usuario para usar tu sesión)
 // ---------------------------------------------------------------------------
 
-const BRAVE_PATH = undefined;
-// Perfil dedicado en datos/maps-profile (se reutiliza entre búsquedas)
+const BRAVE_PATH = '/usr/bin/brave-browser';
+// Tu perfil real de Brave (donde ya estás logueado en Google)
+const BRAVE_USER_DATA_DIR = '/home/x/.config/BraveSoftware/Brave-Browser';
+// Perfil dedicado de respaldo (si tu perfil de Brave está en uso)
 const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
 let contexto: any = null; // BrowserContext persistente
@@ -189,17 +191,56 @@ async function getContexto(headless: boolean): Promise<any> {
   }
   if (!lanzando) {
     lanzando = (async () => {
+      let ctx: any = null;
+      let ultimoError: any = null;
+
+      // Intento 1: usar tu perfil real de Brave (donde ya estás logueado en Google)
+      try {
+        ctx = await chromium.launchPersistentContext(BRAVE_USER_DATA_DIR, {
+          headless,
+          executablePath: BRAVE_PATH,
+          args: [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials',
+            '--disable-features=Translate',
+            '--disable-ipc-flooding-protection',
+            '--lang=es-UY,es',
+            '--disable-web-security',
+            '--disable-features=site-per-process',
+            '--disable-background-networking',
+            '--disable-sync',
+            '--disable-default-apps',
+            '--no-first-run',
+          ],
+          locale: 'es-UY',
+          viewport: { width: 1366, height: 900 },
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
+        return ctx;
+      } catch (err: any) {
+        ultimoError = err;
+        const msg = err?.message || String(err);
+        // Si falla porque Brave ya está abierto con ese perfil, usamos el perfil dedicado
+        console.warn(
+          `[Maps] No se pudo usar tu perfil de Brave real (${msg}). ` +
+            `Usando perfil dedicado en datos/maps-profile. ` +
+            `Si querés usar tu sesión de Google, cerrá Brave y volvé a intentar.`
+        );
+      }
+
+      // Intento 2: perfil dedicado de respaldo
       if (!fs.existsSync(USER_DATA_DIR)) {
         fs.mkdirSync(USER_DATA_DIR, { recursive: true });
       }
-      let ctx: any = null;
-      let ultimoError: any = null;
-      // Intentar hasta 3 veces crear el contexto
       for (let i = 1; i <= 3; i++) {
         try {
           ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
             headless,
-            executablePath: undefined,
+            executablePath: BRAVE_PATH,
             args: [
               '--no-sandbox',
               '--disable-dev-shm-usage',
@@ -225,7 +266,6 @@ async function getContexto(headless: boolean): Promise<any> {
         } catch (err: any) {
           ultimoError = err;
           const msg = err?.message || String(err);
-          // Si el perfil está bloqueado porque Brave está abierto, limpiar y reintentar
           if (/lock|in use|already|locked/i.test(msg)) {
             try {
               await fs.promises.rm(USER_DATA_DIR, { recursive: true, force: true });
