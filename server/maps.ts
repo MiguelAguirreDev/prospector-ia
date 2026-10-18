@@ -166,10 +166,13 @@ function analizarLineas(
 }
 
 // ---------------------------------------------------------------------------
-// Navegador reutilizable (perfil persistente para no pedir login de Google)
+// Navegador reutilizable (perfil de Brave del usuario para no pedir login)
 // ---------------------------------------------------------------------------
 
 const BRAVE_PATH = '/usr/bin/brave-browser';
+// Tu perfil real de Brave (donde ya estás logueado en Google)
+const BRAVE_USER_DATA_DIR = '/home/x/.config/BraveSoftware/Brave-Browser';
+// Perfil dedicado de respaldo (si tu perfil de Brave está en uso por otra ventana)
 const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
 let contexto: any = null; // BrowserContext persistente (con cookies/sesión)
@@ -178,33 +181,63 @@ let lanzando: Promise<any> | null = null;
 async function getContexto(headless: boolean): Promise<any> {
   if (contexto) return contexto;
   if (!lanzando) {
-    // Asegurar que exista el directorio de perfil
-    if (!fs.existsSync(USER_DATA_DIR)) {
-      fs.mkdirSync(USER_DATA_DIR, { recursive: true });
-    }
-    lanzando = chromium
-      .launchPersistentContext(USER_DATA_DIR, {
-        headless,
-        executablePath: BRAVE_PATH,
-        args: [
-          '--no-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-site-isolation-trials',
-          '--disable-features=Translate',
-          '--disable-ipc-flooding-protection',
-          '--lang=es-UY,es',
-        ],
-        locale: 'es-UY',
-        viewport: { width: 1366, height: 900 },
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      })
-      .then(ctx => {
-        contexto = ctx;
+    lanzando = (async () => {
+      // Intento 1: usar tu perfil real de Brave (donde ya estás logueado)
+      try {
+        const ctx = await chromium.launchPersistentContext(BRAVE_USER_DATA_DIR, {
+          headless,
+          executablePath: BRAVE_PATH,
+          args: [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials',
+            '--disable-features=Translate',
+            '--disable-ipc-flooding-protection',
+            '--lang=es-UY,es',
+          ],
+          locale: 'es-UY',
+          viewport: { width: 1366, height: 900 },
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
         return ctx;
-      });
+      } catch (err: any) {
+        // Si falla (probablemente porque Brave ya está abierto con ese perfil),
+        // usamos el perfil dedicado de respaldo
+        console.warn(
+          `[Maps] No se pudo usar tu perfil de Brave (${err?.message || err}). ` +
+            `Usando perfil dedicado en datos/maps-profile. Si querés tu sesión de Google, ` +
+            'cerrá Brave y volvé a intentar.'
+        );
+        if (!fs.existsSync(USER_DATA_DIR)) {
+          fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+        }
+        const ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
+          headless,
+          executablePath: BRAVE_PATH,
+          args: [
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-site-isolation-trials',
+            '--disable-features=Translate',
+            '--disable-ipc-flooding-protection',
+            '--lang=es-UY,es',
+          ],
+          locale: 'es-UY',
+          viewport: { width: 1366, height: 900 },
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        });
+        return ctx;
+      }
+    })().then(ctx => {
+      contexto = ctx;
+      return ctx;
+    });
   }
   return lanzando;
 }
