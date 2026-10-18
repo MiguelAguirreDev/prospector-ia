@@ -375,6 +375,22 @@ export class BaseDatos {
   public sinEmail(): Empresa[] {
     return this.data.empresas.filter(e => !e.email);
   }
+
+  /** Borra TODA la base de datos: empresas, dominios, listas, vínculos y uso de IA.
+   * Deja la base vacía como si acabara de crearse. */
+  public reiniciarTodo(): { ok: boolean; empresasBorradas: number; listasBorradas: number } {
+    const empresasBorradas = this.data.empresas.length;
+    const listasBorradas = this.data.listas.length;
+    this.data.empresas = [];
+    this.data.dominios = {};
+    this.data.listas = [];
+    this.data.empresa_lista = [];
+    this.data.uso_ia = {};
+    this.data.siguiente_id_empresa = 1;
+    this.data.siguiente_id_lista = 1;
+    this.guardar();
+    return { ok: true, empresasBorradas, listasBorradas };
+  }
 }
 
 export const db = new BaseDatos();

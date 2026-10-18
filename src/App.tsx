@@ -632,6 +632,29 @@ export default function App() {
     }
   };
 
+  const reiniciarTodo = async () => {
+    if (corriendo) {
+      toast('Detén la tarea en curso antes de reiniciar.', 'warn');
+      return;
+    }
+    if (!(await confirmAsync('Reiniciar todo', '¿Borrar TODA la base de datos?\n\nSe eliminarán todas las empresas, listas y dominios vistos. No se puede deshacer.', 'borrar_empresa'))) return;
+    const res = await fetch('/api/reiniciar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).then(r => r.json());
+    if (res.error) {
+      toast(res.error, 'warn');
+    } else {
+      setLogs([]);
+      setUltimoLogIndex(0);
+      setListaSeleccionada('');
+      cargarEmpresas();
+      cargarListas();
+      cargarStats();
+      toast(`Base reiniciada: se borraron ${res.empresas_borradas || 0} empresa(s) y ${res.listas_borradas || 0} lista(s).`, 'ok');
+    }
+  };
+
   const formatearTiempo = (seg: number = 0) => {
     const s = Math.round(seg);
     if (s < 60) return `${s}s`;
@@ -1004,6 +1027,18 @@ export default function App() {
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>GUARDAR Y PARAR</span>
+                </button>
+              </div>
+
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={reiniciarTodo}
+                  disabled={corriendo}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl font-medium text-xs text-rose-400 bg-rose-950/20 hover:bg-rose-900/40 border border-rose-500/30 disabled:opacity-40 transition"
+                  title="Borra toda la base de datos (empresas, listas, dominios vistos)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>REINICIAR TODO</span>
                 </button>
               </div>
             </div>

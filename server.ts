@@ -323,6 +323,12 @@ app.post('/api/rescatar_emails', (req: Request, res: Response) => {
   res.json(ok ? { ok: true } : { error: 'Ya hay una tarea corriendo.' });
 });
 
+app.post('/api/reiniciar', (req: Request, res: Response) => {
+  const r = db.reiniciarTodo();
+  agregarLog(`🗑️ Base de datos reiniciada: se borraron ${r.empresasBorradas} empresa(s) y ${r.listasBorradas} lista(s).`);
+  res.json({ ok: true, empresas_borradas: r.empresasBorradas, listas_borradas: r.listasBorradas });
+});
+
 app.post('/api/check', (req: Request, res: Response) => {
   const empresas = db.listar(100);
   let verificado = 0;
