@@ -52,11 +52,39 @@ export interface EmpresaLista {
   fecha: string;
 }
 
+export interface BusquedaHistorial {
+  id: string;
+  nombre: string;
+  consultas: string[];
+  zona: string;
+  max: number;
+  usar_ia: boolean;
+  modo_rapido: boolean;
+  usar_maps: boolean;
+  usar_maps_visible: boolean;
+  usar_buscadores: boolean;
+  lista_nombre: string;
+  lista_auto: boolean;
+  auto_barrios: boolean;
+  modo: 'simple' | 'continuo';
+  estado: 'en_curso' | 'pausada' | 'completada';
+  fecha_inicio: string;
+  fecha_fin?: string;
+  empresas_nuevas: number;
+  con_email: number;
+  con_telefono: number;
+  procesadas: number;
+  indice_consulta?: number;
+  consultas_totales?: number;
+  vuelta?: number;
+}
+
 export interface DBData {
   empresas: Empresa[];
   dominios: Record<string, DominioVisto>;
   listas: Lista[];
   empresa_lista: EmpresaLista[];
+  busquedas: BusquedaHistorial[];
   uso_ia: Record<string, number>;
   siguiente_id_empresa: number;
   siguiente_id_lista: number;
@@ -77,6 +105,9 @@ export class BaseDatos {
       try {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         this.data = JSON.parse(raw);
+        if (!Array.isArray(this.data.busquedas)) {
+          this.data.busquedas = [];
+        }
       } catch (err) {
         console.error('Error loading DB file, initializing fresh:', err);
         this.data = this.getDefaultData();
@@ -93,6 +124,7 @@ export class BaseDatos {
       dominios: {},
       listas: [],
       empresa_lista: [],
+      busquedas: [],
       uso_ia: {},
       siguiente_id_empresa: 1,
       siguiente_id_lista: 1,
@@ -376,20 +408,104 @@ export class BaseDatos {
     return this.data.empresas.filter(e => !e.email);
   }
 
-  /** Borra TODA la base de datos: empresas, dominios, listas, vínculos y uso de IA.
+  /** Crea o registra una nueva búsqueda en el historial */
+  public crearBusqueda(params: Partial<BusquedaHistorial>): BusquedaHistorial {
+    const id = 'busq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const nombre =
+      params.nombre ||
+      (params.consultas && params.consultas[0]) ||
+      (params.auto_barrios ? 'Búsqueda por todos los barrios' : 'Búsqueda');
+
+    const nueva: BusquedaHistorial = {
+      id,
+      nombre,
+      consultas: params.consultas || [],
+      zona: params.zona || '',
+      max: params.max || 20,
+      usar_ia: params.usar_ia ?? true,
+      modo_rapido: params.modo_rapido ?? true,
+      usar_maps: params.usar_maps ?? false,
+      usar_maps_visible: params.usar_maps_visible ?? false,
+      usar_buscadores: params.usar_buscadores ?? true,
+      lista_nombre: params.lista_nombre || '',
+      lista_auto: params.lista_auto ?? true,
+      auto_barrios: params.auto_barrios ?? false,
+      modo: params.modo || 'simple',
+      estado: 'en_curso',
+      fecha_inicio: new Date().toISOString(),
+      empresas_nuevas: 0,
+      con_email: 0,
+      con_telefono: 0,
+      procesadas: 0,
+      indice_consulta: 0,
+      consultas_totales: (params.consultas || []).length,
+      vuelta: 1,
+    };
+
+    if (!Array.isArray(this.data.busquedas)) {
+      this.data.busquedas = [];
+    }
+    this.data.busquedas.unshift(nueva);
+    if (this.data.busquedas.length > 100) {
+      this.data.busquedas = this.data.busquedas.slice(0, 100);
+    }
+    this.guardar();
+    return nueva;
+  }
+
+  public actualizarBusqueda(id: string, parcial: Partial<BusquedaHistorial>): BusquedaHistorial | null {
+    if (!this.data.busquedas) this.data.busquedas = [];
+    const item = this.data.busquedas.find(b => b.id === id);
+    if (!item) return null;
+    Object.assign(item, parcial);
+    item.fecha_fin = new Date().toISOString();
+    this.guardar();
+    return item;
+  }
+
+  public obtenerBusqueda(id: string): BusquedaHistorial | null {
+    if (!this.data.busquedas) this.data.busquedas = [];
+    return this.data.busquedas.find(b => b.id === id) || null;
+  }
+
+  public listarBusquedas(): BusquedaHistorial[] {
+    return this.data.busquedas || [];
+  }
+
+  public borrarBusqueda(id: string): boolean {
+    if (!this.data.busquedas) return false;
+    const prevLen = this.data.busquedas.length;
+    this.data.busquedas = this.data.busquedas.filter(b => b.id !== id);
+    if (this.data.busquedas.length !== prevLen) {
+      this.guardar();
+      return true;
+    }
+    return false;
+  }
+
+  public borrarHistorialBusquedas(): { ok: boolean; borradas: number } {
+    const borradas = (this.data.busquedas || []).length;
+    this.data.busquedas = [];
+    this.guardar();
+    return { ok: true, borradas };
+  }
+
+  /** Borra TODA la base de datos: empresas, dominios, listas, vínculos, historial y uso de IA.
    * Deja la base vacía como si acabara de crearse. */
-  public reiniciarTodo(): { ok: boolean; empresasBorradas: number; listasBorradas: number } {
+  public reiniciarTodo(): { ok: boolean; empresasBorradas: number; listasBorradas: number; busquedasBorradas: number } {
     const empresasBorradas = this.data.empresas.length;
     const listasBorradas = this.data.listas.length;
+    const busquedasBorradas = (this.data.busquedas || []).length;
     this.data.empresas = [];
     this.data.dominios = {};
     this.data.listas = [];
     this.data.empresa_lista = [];
+    this.data.busquedas = [];
     this.data.uso_ia = {};
     this.data.siguiente_id_empresa = 1;
     this.data.siguiente_id_lista = 1;
     this.guardar();
-    return { ok: true, empresasBorradas, listasBorradas };
+    return { ok: true, empresasBorradas, listasBorradas, busquedasBorradas };
   }
 }
 

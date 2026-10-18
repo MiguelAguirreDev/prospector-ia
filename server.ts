@@ -14,6 +14,7 @@ import {
   lanzarTareaRescatarEmails,
   pedirParar,
   agregarLog,
+  limpiarLog,
 } from './server/pipeline.js';
 import {
   exportarEmailsEnLotes,
@@ -256,6 +257,84 @@ app.post('/api/continuo', (req: Request, res: Response) => {
   );
 
   res.json(ok ? { ok: true } : { error: 'Ya hay una tarea corriendo.' });
+});
+
+// Historial de Búsquedas
+app.get('/api/historial', (req: Request, res: Response) => {
+  res.json(db.listarBusquedas());
+});
+
+app.get('/api/historial/:id', (req: Request, res: Response) => {
+  const b = db.obtenerBusqueda(req.params.id);
+  if (!b) return res.status(404).json({ error: 'Búsqueda no encontrada.' });
+  res.json(b);
+});
+
+app.post('/api/historial/borrar', (req: Request, res: Response) => {
+  const id = (req.body.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'Falta parámetro id.' });
+  const ok = db.borrarBusqueda(id);
+  agregarLog(`🗑️ Búsqueda eliminada del historial (id: ${id})`);
+  res.json({ ok });
+});
+
+app.post('/api/historial/borrar_todo', (req: Request, res: Response) => {
+  const r = db.borrarHistorialBusquedas();
+  agregarLog(`🗑️ Todo el historial de búsquedas fue eliminado (${r.borradas} búsquedas borradas).`);
+  res.json(r);
+});
+
+app.post('/api/historial/continuar', (req: Request, res: Response) => {
+  const id = (req.body.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'Falta el id de la búsqueda.' });
+  const b = db.obtenerBusqueda(id);
+  if (!b) return res.status(404).json({ error: 'Búsqueda no encontrada en el historial.' });
+
+  if (appState.corriendo) {
+    return res.status(400).json({ error: 'Ya hay una tarea corriendo. Para la actual antes de reanudar otra.' });
+  }
+
+  const ok =
+    b.modo === 'continuo'
+      ? iniciarTarea(`Continuando modo continuo: ${b.nombre}`, () =>
+          lanzarTareaContinua(
+            b.consultas,
+            b.max,
+            b.zona,
+            b.usar_ia,
+            b.auto_barrios,
+            b.lista_nombre,
+            b.lista_auto,
+            b.modo_rapido,
+            b.usar_maps,
+            b.usar_maps_visible,
+            b.usar_buscadores,
+            b.id
+          )
+        )
+      : iniciarTarea(`Continuando búsqueda: ${b.nombre}`, () =>
+          lanzarTareaBuscar(
+            b.consultas,
+            b.max,
+            b.zona,
+            b.usar_ia,
+            b.lista_nombre,
+            b.lista_auto,
+            b.modo_rapido,
+            b.usar_maps,
+            b.usar_maps_visible,
+            b.usar_buscadores,
+            b.id,
+            b.indice_consulta || 0
+          )
+        );
+
+  res.json({ ok, busqueda: b });
+});
+
+app.post('/api/limpiar_log', (req: Request, res: Response) => {
+  limpiarLog();
+  res.json({ ok: true });
 });
 
 app.post('/api/parar', (req: Request, res: Response) => {

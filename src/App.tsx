@@ -36,7 +36,36 @@ import {
   Server,
   AtSign,
   Send,
+  History,
+  RotateCcw,
 } from 'lucide-react';
+
+interface BusquedaItem {
+  id: string;
+  nombre: string;
+  consultas: string[];
+  zona: string;
+  max: number;
+  usar_ia: boolean;
+  modo_rapido: boolean;
+  usar_maps: boolean;
+  usar_maps_visible: boolean;
+  usar_buscadores: boolean;
+  lista_nombre: string;
+  lista_auto: boolean;
+  auto_barrios: boolean;
+  modo: 'simple' | 'continuo';
+  estado: 'en_curso' | 'pausada' | 'completada';
+  fecha_inicio: string;
+  fecha_fin?: string;
+  empresas_nuevas: number;
+  con_email: number;
+  con_telefono: number;
+  procesadas: number;
+  indice_consulta?: number;
+  consultas_totales?: number;
+  vuelta?: number;
+}
 
 interface Stats {
   empresas: number;
@@ -360,6 +389,11 @@ export default function App() {
   const [cargandoTabla, setCargandoTabla] = useState<boolean>(false);
   const [copiadoId, setCopiadoId] = useState<string | null>(null);
 
+  const [historial, setHistorial] = useState<BusquedaItem[]>([]);
+  const [cargandoHistorial, setCargandoHistorial] = useState<boolean>(false);
+  const [pestanaActiva, setPestanaActiva] = useState<'empresas' | 'historial'>('empresas');
+  const [busquedaHistorialFiltro, setBusquedaHistorialFiltro] = useState<string>('');
+
   const [ultimoLogIndex, setUltimoLogIndex] = useState<number>(0);
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -398,12 +432,149 @@ export default function App() {
     });
   };
 
+  const formatearFecha = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('es-UY', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return iso;
+    }
+  };
+
+  const cargarHistorial = async () => {
+    setCargandoHistorial(true);
+    try {
+      const res = await fetch('/api/historial').then(r => r.json());
+      setHistorial(Array.isArray(res) ? res : []);
+    } catch {} finally {
+      setCargandoHistorial(false);
+    }
+  };
+
+  const continuarBusqueda = async (id: string) => {
+    if (corriendo) {
+      toast('Ya hay una búsqueda en ejecución. Pará la actual primero.', 'warn');
+      return;
+    }
+    const item = historial.find(b => b.id === id);
+    if (!item) return;
+
+    // Sincronizar formulario de búsqueda con los datos de esta búsqueda
+    setConsultas(item.consultas.join('\n'));
+    setZona(item.zona || '');
+    setMaxPorTanda(item.max || 20);
+    setUsarIA(item.usar_ia);
+    setModoRapido(item.modo_rapido);
+    setUsarMaps(item.usar_maps);
+    setUsarBuscadores(item.usar_buscadores);
+    setListaNombre(item.lista_nombre || '');
+    setListaAuto(item.lista_auto);
+    setAutoBarrios(item.auto_barrios);
+
+    setLogs([]);
+    setUltimoLogIndex(0);
+
+    try {
+      const res = await fetch('/api/historial/continuar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      }).then(r => r.json());
+
+      if (res.error) {
+        toast(res.error, 'warn');
+      } else {
+        setCorriendo(true);
+        toast(`Continuando búsqueda: "${item.nombre}"`, 'ok');
+        cargarHistorial();
+        setPestanaActiva('empresas');
+      }
+    } catch {
+      toast('Error al continuar la búsqueda.', 'err');
+    }
+  };
+
+  const cargarParametrosBusqueda = (b: BusquedaItem) => {
+    setConsultas(b.consultas.join('\n'));
+    setZona(b.zona || '');
+    setMaxPorTanda(b.max || 20);
+    setUsarIA(b.usar_ia);
+    setModoRapido(b.modo_rapido);
+    setUsarMaps(b.usar_maps);
+    setUsarBuscadores(b.usar_buscadores);
+    setListaNombre(b.lista_nombre || '');
+    setListaAuto(b.lista_auto);
+    setAutoBarrios(b.auto_barrios);
+    toast(`Parámetros de "${b.nombre}" cargados en el formulario`, 'ok');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const eliminarBusqueda = (id: string, nombre: string) => {
+    confirmModal(
+      'Eliminar búsqueda del historial',
+      `¿Deseas eliminar la búsqueda "${nombre}" del historial? Las empresas ya guardadas en la base de datos se conservarán.`,
+      async () => {
+        try {
+          const res = await fetch('/api/historial/borrar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          }).then(r => r.json());
+          if (res.ok) {
+            toast('Búsqueda eliminada del historial.', 'ok');
+            cargarHistorial();
+          }
+        } catch {
+          toast('Error al eliminar búsqueda.', 'err');
+        }
+      },
+      undefined,
+      'custom'
+    );
+  };
+
+  const borrarTodoHistorial = () => {
+    confirmModal(
+      'Borrar TODO el historial de búsquedas',
+      '¿Estás seguro de que querés borrar todo el historial de búsquedas? Las empresas guardadas en la base se mantendrán intactas.',
+      async () => {
+        try {
+          const res = await fetch('/api/historial/borrar_todo', { method: 'POST' }).then(r => r.json());
+          if (res.ok) {
+            toast(`Historial vaciado (${res.borradas} búsquedas eliminadas).`, 'ok');
+            cargarHistorial();
+          }
+        } catch {
+          toast('Error al vaciar historial.', 'err');
+        }
+      },
+      undefined,
+      'custom'
+    );
+  };
+
+  const limpiarConsola = async () => {
+    try {
+      await fetch('/api/limpiar_log', { method: 'POST' });
+      setLogs([]);
+      setUltimoLogIndex(0);
+      toast('Registro de actividad limpiado.', 'ok');
+    } catch {}
+  };
+
   // Load initial defaults
   useEffect(() => {
     // No cargar consultas por defecto: el buscador inicia vacío
     cargarStats();
     cargarListas();
     cargarEmpresas();
+    cargarHistorial();
   }, []);
 
   // Poll state and logs
@@ -793,6 +964,18 @@ export default function App() {
     );
   };
 
+  const ultimaPausada = historial.find(h => h.estado === 'pausada');
+
+  const historialFiltrado = historial.filter(h => {
+    if (!busquedaHistorialFiltro) return true;
+    const q = busquedaHistorialFiltro.toLowerCase();
+    return (
+      h.nombre.toLowerCase().includes(q) ||
+      h.consultas.some(c => c.toLowerCase().includes(q)) ||
+      (h.zona && h.zona.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] font-sans antialiased">
       {/* HEADER */}
@@ -840,11 +1023,33 @@ export default function App() {
               <span className="text-[#8b949e]">Dominios:</span>
               <strong className="text-purple-300 font-semibold">{stats.dominios_vistos}</strong>
             </div>
+            <div className="h-4 w-[1px] bg-[#30363d]" />
+            <button
+              onClick={() => {
+                setPestanaActiva('historial');
+                const el = document.getElementById('seccion-explorador');
+                if (el) el.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition ${
+                pestanaActiva === 'historial'
+                  ? 'bg-amber-950/70 text-amber-300 border border-amber-600/50 shadow'
+                  : 'text-[#8b949e] hover:text-white hover:bg-[#21262d]'
+              }`}
+              title="Ver historial de búsquedas guardadas"
+            >
+              <History className="w-4 h-4 text-amber-400" />
+              <span>Historial:</span>
+              <strong className="text-amber-300 font-semibold">{historial.length}</strong>
+              {historial.some(h => h.estado === 'pausada') && (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Hay búsquedas pausadas listas para continuar" />
+              )}
+            </button>
             <button
               onClick={() => {
                 cargarStats();
                 cargarListas();
                 cargarEmpresas(listaSeleccionada);
+                cargarHistorial();
               }}
               className="p-1 rounded-lg text-[#8b949e] hover:text-white hover:bg-[#21262d] transition"
               title="Refrescar métricas"
@@ -870,6 +1075,51 @@ export default function App() {
                 5 Fuentes en paralelo
               </span>
             </div>
+
+            {/* AVISO DE BÚSQUEDA PAUSADA (CONTINUAR) */}
+            {ultimaPausada && !corriendo && (
+              <div className="bg-amber-950/30 border border-amber-500/40 rounded-xl p-3 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+                      <Play className="w-3.5 h-3.5 fill-amber-400" />
+                    </span>
+                    <div>
+                      <div className="text-xs font-bold text-amber-300">
+                        Búsqueda pausada disponible
+                      </div>
+                      <div className="text-xs text-white font-medium truncate max-w-[210px] sm:max-w-xs">
+                        "{ultimaPausada.nombre}"
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    +{ultimaPausada.empresas_nuevas} nuevas
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1.5 border-t border-amber-800/30 text-[11px]">
+                  <span className="text-amber-200/70">
+                    {ultimaPausada.con_email} emails · {ultimaPausada.con_telefono || 0} tel
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => continuarBusqueda(ultimaPausada.id)}
+                      className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 text-xs font-bold flex items-center gap-1 shadow transition"
+                    >
+                      <Play className="w-3 h-3 fill-zinc-950" />
+                      <span>Continuar</span>
+                    </button>
+                    <button
+                      onClick={() => eliminarBusqueda(ultimaPausada.id, ultimaPausada.nombre)}
+                      className="p-1 rounded text-amber-400/80 hover:text-rose-300 hover:bg-rose-950/30 transition"
+                      title="Eliminar del historial"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-medium text-[#8b949e] mb-1.5">
@@ -1095,9 +1345,19 @@ export default function App() {
                 />
                 <h2 className="text-sm font-bold uppercase tracking-wider text-[#c9d1d9]">2. Monitor de Actividad</h2>
               </div>
-              <div className="flex items-center gap-2 text-xs text-[#8b949e]">
-                <Clock className="w-3.5 h-3.5" />
-                <span>{formatearTiempo(progreso?.t_total)}</span>
+              <div className="flex items-center gap-2.5 text-xs text-[#8b949e]">
+                <button
+                  onClick={limpiarConsola}
+                  className="px-2 py-0.5 rounded text-[11px] text-[#8b949e] hover:text-white hover:bg-[#21262d] transition flex items-center gap-1 border border-[#30363d]/60"
+                  title="Limpiar texto de la consola"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>Limpiar consola</span>
+                </button>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>{formatearTiempo(progreso?.t_total)}</span>
+                </div>
               </div>
             </div>
 
@@ -1393,20 +1653,234 @@ export default function App() {
           </div>
         </div>
 
-        {/* SECTION 4: COMPANIES EXPLORER TABLE */}
-        <section className="bg-[#161b22] border border-[#30363d] rounded-2xl p-5 space-y-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[#30363d]">
+        {/* SECTION 4: COMPANIES EXPLORER TABLE & SEARCH HISTORY */}
+        <section id="seccion-explorador" className="bg-[#161b22] border border-[#30363d] rounded-2xl p-5 space-y-4 shadow-sm">
+          {/* TABS SWITCHER: Empresas vs Historial */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#30363d]">
             <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-bold uppercase tracking-wider text-[#c9d1d9]">
-                5. Directorio de Contactos Extraídos{' '}
-                {listaSeleccionada && (
-                  <span className="text-emerald-400 normal-case font-normal">
-                    — Filtro: "{listaSeleccionada}"
-                  </span>
+              <button
+                onClick={() => setPestanaActiva('empresas')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  pestanaActiva === 'empresas'
+                    ? 'bg-emerald-500 text-zinc-950 shadow-md shadow-emerald-950/40'
+                    : 'bg-[#0d1117] text-[#8b949e] hover:text-white border border-[#30363d]'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Directorio de Empresas ({empresas.length})</span>
+              </button>
+
+              <button
+                onClick={() => setPestanaActiva('historial')}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition ${
+                  pestanaActiva === 'historial'
+                    ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-950/40'
+                    : 'bg-[#0d1117] text-[#8b949e] hover:text-white border border-[#30363d]'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Historial de Búsquedas ({historial.length})</span>
+                {historial.some(h => h.estado === 'pausada') && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Hay búsquedas pausadas listas para continuar" />
                 )}
-              </h3>
+              </button>
             </div>
+
+            {pestanaActiva === 'historial' && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={cargarHistorial}
+                  className="px-2.5 py-1 rounded-lg bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] hover:text-white text-xs flex items-center gap-1 transition"
+                  title="Refrescar historial"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${cargandoHistorial ? 'animate-spin' : ''}`} />
+                  <span>Refrescar</span>
+                </button>
+                {historial.length > 0 && (
+                  <button
+                    onClick={borrarTodoHistorial}
+                    className="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/40 text-rose-300 text-xs flex items-center gap-1 transition"
+                    title="Eliminar todas las búsquedas del historial"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Borrar Todo el Historial</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {pestanaActiva === 'historial' ? (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0d1117] p-3.5 rounded-xl border border-[#30363d]">
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-amber-400" />
+                    Búsquedas Guardadas y Continuación de Prospección
+                  </h4>
+                  <p className="text-[11px] text-[#8b949e] mt-0.5">
+                    Si pausaste o paraste una búsqueda (ej. podólogos), hacé clic en <strong>Continuar Búsqueda</strong> para retomar la extracción de contactos sin repetir las empresas que ya fueron guardadas.
+                  </p>
+                </div>
+                <div className="relative shrink-0">
+                  <input
+                    type="text"
+                    placeholder="Filtrar búsquedas..."
+                    value={busquedaHistorialFiltro}
+                    onChange={e => setBusquedaHistorialFiltro(e.target.value)}
+                    className="bg-[#161b22] border border-[#30363d] rounded-lg pl-7 pr-3 py-1 text-xs text-white placeholder-[#484f58] focus:outline-none focus:border-amber-500 w-52"
+                  />
+                  <Search className="w-3.5 h-3.5 text-[#8b949e] absolute left-2 top-1.5" />
+                </div>
+              </div>
+
+              {cargandoHistorial ? (
+                <div className="p-8 text-center text-xs text-[#8b949e]">Cargando historial de búsquedas...</div>
+              ) : historialFiltrado.length === 0 ? (
+                <div className="p-10 text-center space-y-2 border border-[#30363d] rounded-xl bg-[#0d1117]">
+                  <History className="w-8 h-8 text-[#484f58] mx-auto" />
+                  <p className="text-sm text-[#8b949e]">
+                    {busquedaHistorialFiltro ? 'No se encontraron búsquedas con ese filtro.' : 'No hay búsquedas en el historial todavía.'}
+                  </p>
+                  <p className="text-xs text-[#484f58]">
+                    Iniciá una búsqueda arriba (ej. "podólogos Montevideo"). Cada búsqueda quedará guardada y podrás reanudarla cuando quieras.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {historialFiltrado.map(item => {
+                    const esPausada = item.estado === 'pausada';
+                    const esEnCurso = item.estado === 'en_curso';
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-4 rounded-xl border transition ${
+                          esPausada
+                            ? 'bg-amber-950/20 border-amber-600/40 shadow-sm'
+                            : esEnCurso
+                            ? 'bg-emerald-950/20 border-emerald-600/40'
+                            : 'bg-[#0d1117] border-[#30363d] hover:border-[#484f58]'
+                        }`}
+                      >
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 border ${
+                                  esEnCurso
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : esPausada
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+                                }`}
+                              >
+                                {esEnCurso ? (
+                                  <>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                    En ejecución
+                                  </>
+                                ) : esPausada ? (
+                                  <>⏸️ Pausada (lista para seguir)</>
+                                ) : (
+                                  <>✅ Completada</>
+                                )}
+                              </span>
+
+                              <span className="text-[10px] px-2 py-0.5 rounded bg-[#21262d] text-[#8b949e]">
+                                {item.modo === 'continuo' ? '⚡ Modo Continuo' : '🔍 Búsqueda Simple'}
+                              </span>
+
+                              <span className="text-[10px] text-[#8b949e]">
+                                🗓️ {formatearFecha(item.fecha_inicio)}
+                              </span>
+                            </div>
+
+                            <div className="text-sm font-bold text-white truncate">
+                              {item.nombre}
+                            </div>
+
+                            <div className="text-xs text-[#8b949e] font-mono truncate">
+                              Consultas ({item.consultas.length}): {item.consultas.join(' · ')}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-xs pt-1">
+                              <div className="flex items-center gap-1 text-emerald-400 font-semibold">
+                                <Building2 className="w-3.5 h-3.5" />
+                                <span>+{item.empresas_nuevas} nuevas</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-emerald-300">
+                                <Mail className="w-3.5 h-3.5" />
+                                <span>{item.con_email} emails</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-teal-300">
+                                <Phone className="w-3.5 h-3.5" />
+                                <span>{item.con_telefono || 0} tel</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-[#8b949e]">
+                                <Globe className="w-3.5 h-3.5" />
+                                <span>{item.procesadas} sitios analizados</span>
+                              </div>
+                              {item.zona && (
+                                <span className="text-[11px] text-[#8b949e] bg-[#161b22] px-2 py-0.5 rounded">
+                                  📍 {item.zona}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ACTIONS */}
+                          <div className="flex flex-wrap items-center gap-2 self-start md:self-center shrink-0">
+                            <button
+                              onClick={() => continuarBusqueda(item.id)}
+                              disabled={corriendo}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow transition ${
+                                esPausada
+                                  ? 'bg-amber-500 hover:bg-amber-400 text-zinc-950'
+                                  : 'bg-emerald-500 hover:bg-emerald-400 text-zinc-950'
+                              } disabled:opacity-40 disabled:cursor-not-allowed`}
+                              title="Continuar prospección buscando nuevos candidatos sin repetir los ya vistos"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-zinc-950" />
+                              <span>{esPausada ? 'Continuar Búsqueda' : 'Seguir Buscando'}</span>
+                            </button>
+
+                            <button
+                              onClick={() => cargarParametrosBusqueda(item)}
+                              className="px-2.5 py-1.5 rounded-xl bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-xs font-medium transition"
+                              title="Copia los términos y opciones al formulario de búsqueda"
+                            >
+                              Cargar en formulario
+                            </button>
+
+                            <button
+                              onClick={() => eliminarBusqueda(item.id, item.nombre)}
+                              className="p-1.5 rounded-xl text-[#8b949e] hover:text-rose-400 hover:bg-rose-950/30 transition"
+                              title="Eliminar esta búsqueda del historial"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[#30363d]">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#c9d1d9]">
+                    5. Directorio de Contactos Extraídos{' '}
+                    {listaSeleccionada && (
+                      <span className="text-emerald-400 normal-case font-normal">
+                        — Filtro: "{listaSeleccionada}"
+                      </span>
+                    )}
+                  </h3>
+                </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {listaSeleccionada && (
@@ -1701,7 +2175,9 @@ export default function App() {
               </table>
             )}
           </div>
-        </section>
+        </div>
+      )}
+    </section>
       </main>
 
       {/* TOASTS Y MODALES */}

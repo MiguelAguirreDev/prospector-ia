@@ -20,6 +20,7 @@ export interface MapsNegocio {
   nombre: string;
   telefono: string;
   sitio_web: string;
+  red_social?: string;
   direccion: string;
   categoria: string;
   rating: string;
@@ -169,9 +170,9 @@ function analizarLineas(
 // Navegador reutilizable (perfil de Brave del usuario para usar tu sesión)
 // ---------------------------------------------------------------------------
 
-const BRAVE_PATH = '/usr/bin/brave-browser';
+const BRAVE_PATH = process.env.BRAVE_PATH || (fs.existsSync('/usr/bin/brave-browser') ? '/usr/bin/brave-browser' : undefined);
 // Tu perfil real de Brave (donde ya estás logueado en Google)
-const BRAVE_USER_DATA_DIR = '/home/x/.config/BraveSoftware/Brave-Browser';
+const BRAVE_USER_DATA_DIR = process.env.BRAVE_USER_DATA_DIR || '/home/x/.config/BraveSoftware/Brave-Browser';
 // Perfil dedicado de respaldo (si tu perfil de Brave está en uso)
 const USER_DATA_DIR = path.resolve(process.cwd(), 'datos', 'maps-profile');
 
@@ -194,51 +195,10 @@ async function getContexto(headless: boolean): Promise<any> {
       let ctx: any = null;
       let ultimoError: any = null;
 
-      // Intento 1: usar tu perfil real de Brave (donde ya estás logueado en Google)
-      try {
-        ctx = await chromium.launchPersistentContext(BRAVE_USER_DATA_DIR, {
-          headless,
-          executablePath: BRAVE_PATH,
-          args: [
-            '--no-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-features=IsolateOrigins,site-per-process',
-            '--disable-site-isolation-trials',
-            '--disable-features=Translate',
-            '--disable-ipc-flooding-protection',
-            '--lang=es-UY,es',
-            '--disable-web-security',
-            '--disable-features=site-per-process',
-            '--disable-background-networking',
-            '--disable-sync',
-            '--disable-default-apps',
-            '--no-first-run',
-          ],
-          locale: 'es-UY',
-          viewport: { width: 1366, height: 900 },
-          userAgent:
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-        });
-        return ctx;
-      } catch (err: any) {
-        ultimoError = err;
-        const msg = err?.message || String(err);
-        // Si falla porque Brave ya está abierto con ese perfil, usamos el perfil dedicado
-        console.warn(
-          `[Maps] No se pudo usar tu perfil de Brave real (${msg}). ` +
-            `Usando perfil dedicado en datos/maps-profile. ` +
-            `Si querés usar tu sesión de Google, cerrá Brave y volvé a intentar.`
-        );
-      }
-
-      // Intento 2: perfil dedicado de respaldo
-      if (!fs.existsSync(USER_DATA_DIR)) {
-        fs.mkdirSync(USER_DATA_DIR, { recursive: true });
-      }
-      for (let i = 1; i <= 3; i++) {
+      // Intento 1: usar tu perfil real de Brave (donde ya estás logueado en Google, si existe)
+      if (BRAVE_PATH && fs.existsSync(BRAVE_USER_DATA_DIR)) {
         try {
-          ctx = await chromium.launchPersistentContext(USER_DATA_DIR, {
+          ctx = await chromium.launchPersistentContext(BRAVE_USER_DATA_DIR, {
             headless,
             executablePath: BRAVE_PATH,
             args: [
@@ -262,6 +222,48 @@ async function getContexto(headless: boolean): Promise<any> {
             userAgent:
               'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
           });
+          return ctx;
+        } catch (err: any) {
+          ultimoError = err;
+          const msg = err?.message || String(err);
+          console.warn(
+            `[Maps] No se pudo usar tu perfil de Brave real (${msg}). ` +
+              `Usando perfil dedicado en datos/maps-profile.`
+          );
+        }
+      }
+
+      // Intento 2: perfil dedicado de respaldo
+      if (!fs.existsSync(USER_DATA_DIR)) {
+        fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+      }
+      for (let i = 1; i <= 3; i++) {
+        try {
+          const launchOpts: any = {
+            headless,
+            args: [
+              '--no-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-blink-features=AutomationControlled',
+              '--disable-features=IsolateOrigins,site-per-process',
+              '--disable-site-isolation-trials',
+              '--disable-features=Translate',
+              '--disable-ipc-flooding-protection',
+              '--lang=es-UY,es',
+              '--disable-web-security',
+              '--disable-features=site-per-process',
+              '--disable-background-networking',
+              '--disable-sync',
+              '--disable-default-apps',
+              '--no-first-run',
+            ],
+            locale: 'es-UY',
+            viewport: { width: 1366, height: 900 },
+            userAgent:
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+          };
+          if (BRAVE_PATH) launchOpts.executablePath = BRAVE_PATH;
+          ctx = await chromium.launchPersistentContext(USER_DATA_DIR, launchOpts);
           break; // éxito
         } catch (err: any) {
           ultimoError = err;
@@ -387,6 +389,7 @@ async function rasparTarjeta(tarjeta: any): Promise<MapsNegocio | null> {
   // Sitio web: leer cualquier enlace externo de la tarjeta que no sea Google
   // ni red social (igual que el scraper de escritorio).
   let sitio = '';
+  let redSocial = '';
   try {
     const enlaces = tarjeta.locator('a[href]');
     const nEnlaces = await enlaces.count();
@@ -394,16 +397,25 @@ async function rasparTarjeta(tarjeta: any): Promise<MapsNegocio | null> {
       const h = ((await enlaces.nth(i).getAttribute('href')) || '').trim();
       if (h.startsWith('http') && !h.includes('google.') && !h.includes('/maps/')) {
         const limpia = limpiarUrl(h);
-        if (limpia && !esWebNoPropia(limpia)) {
-          sitio = limpia;
-          break;
+        if (limpia) {
+          if (!esWebNoPropia(limpia)) {
+            sitio = limpia;
+            break;
+          } else if (!redSocial && /(instagram|facebook|fb\.com|wa\.me|linktr\.ee)/i.test(limpia)) {
+            redSocial = limpia;
+          }
         }
       }
     }
   } catch {}
   // fallback: data-item-id authority
   if (!sitio) {
-    sitio = await datoPorItem(tarjeta, 'authority', 'href');
+    const auth = await datoPorItem(tarjeta, 'authority', 'href');
+    if (auth && !esWebNoPropia(auth)) {
+      sitio = auth;
+    } else if (auth && !redSocial) {
+      redSocial = auth;
+    }
   }
   let direccion = await datoPorItem(tarjeta, 'address', undefined, ['dirección', 'direccion', 'address']);
   const rating = await primerTexto(tarjeta, SELECTORES_RATING);
@@ -429,7 +441,7 @@ async function rasparTarjeta(tarjeta: any): Promise<MapsNegocio | null> {
   const { direccion: dirTxt, categoria } = analizarLineas(lineas, nombre, telefono);
   if (!direccion) direccion = dirTxt;
 
-  return { nombre, telefono, sitio_web: sitio, direccion, categoria, rating, resenas, url };
+  return { nombre, telefono, sitio_web: sitio, red_social: redSocial, direccion, categoria, rating, resenas, url };
 }
 
 async function rasparDetalleUnico(page: Page): Promise<MapsNegocio | null> {

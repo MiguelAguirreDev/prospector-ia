@@ -120,6 +120,7 @@ export const monitor = new Monitor();
 
 export interface AppState {
   corriendo: boolean;
+  busquedaId: string | null;
   log: string[];
   titulo: string;
   resultado: string;
@@ -129,12 +130,17 @@ export interface AppState {
 
 export const appState: AppState = {
   corriendo: false,
+  busquedaId: null,
   log: [],
   titulo: '',
   resultado: '',
   parar: false,
   pedido: '',
 };
+
+export function limpiarLog(): void {
+  appState.log = [];
+}
 
 export function agregarLog(msg: string): void {
   const d = new Date();
@@ -276,7 +282,7 @@ export async function procesarConsulta(
   usarIA: boolean,
   modoRapido: boolean,
   listas: string[],
-  usarMaps: boolean = false,
+  usarMaps: boolean = true,
   usarMapsVisible: boolean = false,
   usarBuscadores: boolean = false
 ): Promise<Empresa[]> {
@@ -302,16 +308,8 @@ export async function procesarConsulta(
         ` (${resultados.length} dominios únicos)`
     );
   } else {
-    agregarLog(`Buscadores web desactivados (solo Maps).`);
+    agregarLog(`Buscadores web desactivados inicialmente.`);
   }
-
-  agregarLog(
-    `Buscadores en ${duracionSeg}s: ` +
-      Object.entries(fuentes)
-        .map(([k, v]) => `${k}=${v.error ? 'falló' : v.resultados}`)
-        .join(', ') +
-      ` (${resultados.length} dominios únicos)`
-  );
 
   // Fuente adicional: Google Maps (con navegador real). Trae teléfono/dirección y,
   // cuando el negocio los publica, el sitio web que luego se rastrea para el email.
@@ -342,7 +340,28 @@ export async function procesarConsulta(
     } catch (err: any) {
       fuentes['google_maps'] = { resultados: 0, error: true };
       monitor.poner({ fuentes });
-      agregarLog(`[!] Google Maps falló: ${err?.message || err}`);
+      agregarLog(`[!] Google Maps: ${err?.message || err}`);
+    }
+  }
+
+  // Si no hay resultados de Maps o buscadores, consultar las fuentes web paralelas
+  if (resultados.length === 0) {
+    agregarLog(`🔎 Consultando buscadores web paralelos (DuckDuckGo, Yahoo, Bing, Mojeek)...`);
+    try {
+      const r = await busquedaMultiFuente(consulta, Math.max(30, maxNuevos * 2));
+      resultados = r.resultados;
+      Object.assign(fuentes, r.fuentes);
+      duracionSeg += r.duracionSeg;
+      monitor.poner({ fuentes, t_busqueda: duracionSeg });
+      agregarLog(
+        `Buscadores en ${r.duracionSeg}s: ` +
+          Object.entries(r.fuentes)
+            .map(([k, v]) => `${k}=${v.error ? 'falló' : v.resultados}`)
+            .join(', ') +
+          ` (${resultados.length} dominios únicos)`
+      );
+    } catch (err: any) {
+      agregarLog(`[!] Error en búsqueda web: ${err?.message || err}`);
     }
   }
 
@@ -660,12 +679,60 @@ export async function lanzarTareaBuscar(
   modoRapido: boolean,
   usarMaps: boolean = true,
   usarMapsVisible: boolean = false,
-  usarBuscadores: boolean = false
+  usarBuscadores: boolean = false,
+  busquedaIdExistente?: string,
+  indiceInicio: number = 0
 ): Promise<void> {
+  let busquedaId = busquedaIdExistente;
   let totalNuevas = 0;
-  agregarLog(`=== Iniciando búsqueda de ${consultas.length} consulta(s) a alta velocidad ===`);
+  let conEmailTotal = 0;
+  let conTelTotal = 0;
+  let procesadasTotal = 0;
 
-  for (let i = 0; i < consultas.length; i++) {
+  if (busquedaId) {
+    const previa = db.obtenerBusqueda(busquedaId);
+    if (previa) {
+      totalNuevas = previa.empresas_nuevas || 0;
+      conEmailTotal = previa.con_email || 0;
+      conTelTotal = previa.con_telefono || 0;
+      procesadasTotal = previa.procesadas || 0;
+      indiceInicio = indiceInicio || previa.indice_consulta || 0;
+      if (indiceInicio >= consultas.length) {
+        indiceInicio = 0;
+      }
+      db.actualizarBusqueda(busquedaId, { estado: 'en_curso' });
+      agregarLog(`▶️ Reanudando búsqueda guardada "${previa.nombre}" desde consulta ${indiceInicio + 1} de ${consultas.length}...`);
+    }
+  } else {
+    const b = db.crearBusqueda({
+      consultas,
+      max: maxN,
+      zona,
+      usar_ia: usarIA,
+      modo_rapido: modoRapido,
+      usar_maps: usarMaps,
+      usar_maps_visible: usarMapsVisible,
+      usar_buscadores: usarBuscadores,
+      lista_nombre: listaNombre,
+      lista_auto: listaAuto,
+      auto_barrios: false,
+      modo: 'simple',
+      nombre: consultas.slice(0, 2).join(' + ') + (zona ? ` (${zona})` : ''),
+    });
+    busquedaId = b.id;
+  }
+
+  appState.busquedaId = busquedaId;
+  monitor.poner({
+    nuevas: totalNuevas,
+    con_email: conEmailTotal,
+    con_telefono: conTelTotal,
+    procesadas: procesadasTotal,
+  });
+
+  agregarLog(`=== Iniciando búsqueda de ${consultas.length} consulta(s) (desde #${indiceInicio + 1}) ===`);
+
+  for (let i = indiceInicio; i < consultas.length; i++) {
     if (debeParar()) break;
     const c = consultas[i];
     const listas = listasPara(c, listaNombre, listaAuto);
@@ -677,6 +744,27 @@ export async function lanzarTareaBuscar(
     const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible, usarBuscadores);
     totalNuevas += guardadas.length;
     agregarLog(`-> ${guardadas.length} nuevas de "${c}" (listas: ${listas.join(', ')})`);
+
+    if (busquedaId) {
+      db.actualizarBusqueda(busquedaId, {
+        empresas_nuevas: monitor.data.nuevas,
+        con_email: monitor.data.con_email,
+        con_telefono: monitor.data.con_telefono,
+        procesadas: monitor.data.procesadas,
+        indice_consulta: i + 1,
+      });
+    }
+  }
+
+  const estadoFinal = debeParar() ? 'pausada' : 'completada';
+  if (busquedaId) {
+    db.actualizarBusqueda(busquedaId, {
+      estado: estadoFinal,
+      empresas_nuevas: monitor.data.nuevas,
+      con_email: monitor.data.con_email,
+      con_telefono: monitor.data.con_telefono,
+      procesadas: monitor.data.procesadas,
+    });
   }
 
   monitor.poner({ fase: 'inactivo' });
@@ -687,7 +775,12 @@ export async function lanzarTareaBuscar(
 
   const stats = db.estadisticas();
   agregarLog(`Estado actual: ${JSON.stringify(stats)}`);
-  appState.resultado = `${totalNuevas} empresas nuevas`;
+  appState.resultado = `${totalNuevas} empresas acumuladas (${estadoFinal === 'pausada' ? 'Pausada' : 'Completada'})`;
+  if (estadoFinal === 'pausada') {
+    agregarLog(`⏸️ Búsqueda guardada y pausada. Podés continuarla cuando quieras desde el Historial.`);
+  } else {
+    agregarLog(`✅ Búsqueda completada exitosamente y registrada en el historial.`);
+  }
 }
 
 export async function lanzarTareaContinua(
@@ -701,15 +794,52 @@ export async function lanzarTareaContinua(
   modoRapido: boolean,
   usarMaps: boolean = true,
   usarMapsVisible: boolean = false,
-  usarBuscadores: boolean = false
+  usarBuscadores: boolean = false,
+  busquedaIdExistente?: string
 ): Promise<void> {
   const listaConsultas = autoBarrios ? generarConsultasAuto() : consultas;
-  agregarLog(
-    `=== Modo Continuo iniciado con ${listaConsultas.length} consultas ${autoBarrios ? '(Montevideo + Canelones + Maldonado)' : ''} ===`
-  );
-
+  let busquedaId = busquedaIdExistente;
   let vuelta = 1;
   let totalNuevasGlobal = 0;
+
+  if (busquedaId) {
+    const previa = db.obtenerBusqueda(busquedaId);
+    if (previa) {
+      totalNuevasGlobal = previa.empresas_nuevas || 0;
+      vuelta = previa.vuelta || 1;
+      db.actualizarBusqueda(busquedaId, { estado: 'en_curso' });
+      agregarLog(`▶️ Reanudando Modo Continuo guardado "${previa.nombre}" (Vuelta ${vuelta})...`);
+    }
+  } else {
+    const b = db.crearBusqueda({
+      consultas: listaConsultas,
+      max: maxN,
+      zona,
+      usar_ia: usarIA,
+      modo_rapido: modoRapido,
+      usar_maps: usarMaps,
+      usar_maps_visible: usarMapsVisible,
+      usar_buscadores: usarBuscadores,
+      lista_nombre: listaNombre,
+      lista_auto: listaAuto,
+      auto_barrios: autoBarrios,
+      modo: 'continuo',
+      nombre: autoBarrios
+        ? 'Modo Continuo (Todos los barrios)'
+        : `Modo Continuo (${listaConsultas.slice(0, 2).join(', ')})`,
+    });
+    busquedaId = b.id;
+  }
+
+  appState.busquedaId = busquedaId;
+  monitor.poner({
+    nuevas: totalNuevasGlobal,
+    vuelta,
+  });
+
+  agregarLog(
+    `=== Modo Continuo ${busquedaIdExistente ? 'reanudado' : 'iniciado'} con ${listaConsultas.length} consultas ${autoBarrios ? '(Montevideo + Canelones + Maldonado)' : ''} ===`
+  );
 
   while (!debeParar()) {
     monitor.poner({ vuelta });
@@ -728,6 +858,17 @@ export async function lanzarTareaContinua(
       nuevasEnEstaVuelta += guardadas.length;
       totalNuevasGlobal += guardadas.length;
       agregarLog(`[Vuelta ${vuelta}] -> ${guardadas.length} nuevas de "${c}"`);
+
+      if (busquedaId) {
+        db.actualizarBusqueda(busquedaId, {
+          empresas_nuevas: monitor.data.nuevas,
+          con_email: monitor.data.con_email,
+          con_telefono: monitor.data.con_telefono,
+          procesadas: monitor.data.procesadas,
+          indice_consulta: i + 1,
+          vuelta,
+        });
+      }
     }
 
     if (debeParar()) break;
@@ -742,12 +883,27 @@ export async function lanzarTareaContinua(
     }
 
     vuelta++;
+    if (busquedaId) {
+      db.actualizarBusqueda(busquedaId, { vuelta });
+    }
+  }
+
+  const estadoFinal = debeParar() ? 'pausada' : 'completada';
+  if (busquedaId) {
+    db.actualizarBusqueda(busquedaId, {
+      estado: estadoFinal,
+      empresas_nuevas: monitor.data.nuevas,
+      con_email: monitor.data.con_email,
+      con_telefono: monitor.data.con_telefono,
+      procesadas: monitor.data.procesadas,
+      vuelta,
+    });
   }
 
   monitor.poner({ fase: 'inactivo' });
   exportarTodasLasListas();
-  appState.resultado = `${totalNuevasGlobal} empresas procesadas en modo continuo`;
-  agregarLog(`=== Modo Continuo finalizado. Total acumulado: ${totalNuevasGlobal} ===`);
+  appState.resultado = `${totalNuevasGlobal} empresas procesadas en modo continuo (${estadoFinal === 'pausada' ? 'Pausada' : 'Completada'})`;
+  agregarLog(`=== Modo Continuo finalizado. Estado: ${estadoFinal}. Total acumulado: ${totalNuevasGlobal} ===`);
 }
 
 /**
