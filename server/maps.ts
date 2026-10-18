@@ -33,6 +33,7 @@ const SEL_TARJETA = 'div.Nv2PK';
 const SEL_TARJETA_ALT = 'div[role="feed"] > div > div[jsaction]';
 const SEL_ENLACE = 'a.hfpxzc';
 const SEL_MAIN = 'div[role="main"]';
+const SEL_TELEFONO = 'span.UsdlK'; // teléfono visible en la tarjeta (DOM actual de Maps)
 const SELECTORES_NOMBRE = ['div.qBF1Pd', 'div.fontHeadlineSmall', 'div.fontTitleMedium'];
 const SELECTORES_RATING = ['span.MW4etd', "div.F7nice span[aria-hidden='true']"];
 const SELECTORES_RESENAS = [
@@ -40,6 +41,11 @@ const SELECTORES_RESENAS = [
   "div.F7nice span[aria-label*='reseña']",
   "div.F7nice span[aria-label*='opinion']",
   "div.F7nice span[aria-label*='review']",
+];
+
+const FIN_LISTA = [
+  'llegaste al final', 'reached the end', 'se acabaron los resultados',
+  'no hay más resultados', 'no more results',
 ];
 
 const RUIDO_UI = new Set([
@@ -184,10 +190,12 @@ async function datoPorItem(
   alcance: any,
   itemId: string,
   atributo?: string,
-  prefijosAria: string[] = []
+  prefijosAria: string[] = [],
+  comodin: '=' | '^=' = '='
 ): Promise<string> {
   try {
-    const loc = alcance.locator(`[data-item-id="${itemId}"]`).first();
+    const sel = comodin === '^=' ? `[data-item-id^="${itemId}"]` : `[data-item-id="${itemId}"]`;
+    const loc = alcance.locator(sel).first();
     if ((await loc.count()) === 0) return '';
     if (atributo) return ((await loc.getAttribute(atributo)) || '').trim();
     const raw = (await loc.getAttribute('data-item-id')) || '';
@@ -231,6 +239,22 @@ async function rasparTarjeta(tarjeta: any): Promise<MapsNegocio | null> {
   if (!nombre) return null;
 
   let telefono = await datoPorItem(tarjeta, 'phone', undefined, ['teléfono', 'telefono', 'phone']);
+  // Teléfono visible en la tarjeta (selector actual de Maps) y phone:tel: con comodín.
+  if (!telefono) {
+    try {
+      const telEl = tarjeta.locator(SEL_TELEFONO).first();
+      if ((await telEl.count()) > 0) {
+        const t = ((await telEl.innerText()) || '').trim();
+        if (buscarTelefonoUY(t)) telefono = t;
+      }
+    } catch {}
+  }
+  if (!telefono) {
+    try {
+      const telRaw = await datoPorItem(tarjeta, 'phone:tel:', undefined, [], '^=');
+      if (telRaw) telefono = telRaw;
+    } catch {}
+  }
   const sitio = await datoPorItem(tarjeta, 'authority', 'href');
   let direccion = await datoPorItem(tarjeta, 'address', undefined, ['dirección', 'direccion', 'address']);
   const rating = await primerTexto(tarjeta, SELECTORES_RATING);
@@ -321,13 +345,29 @@ async function locadorTarjetas(page: Page) {
 async function cargarResultados(page: Page, feed: any, maximo: number): Promise<void> {
   let previos = -1;
   let estancado = 0;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 100; i++) {
     const tarjetas = await locadorTarjetas(page);
     const n = await tarjetas.count();
     if (maximo && n >= maximo) break;
+
+    // Detectar fin de lista (texto "no hay más resultados" o similar)
+    try {
+      const cuerpo = (await page.locator(SEL_MAIN).innerText({ timeout: 1000 })).toLowerCase();
+      if (FIN_LISTA.some(f => cuerpo.includes(f))) break;
+    } catch {}
+
     if (n === previos) {
       estancado++;
-      if (estancado >= 3) break;
+      if (estancado >= 4) break;
+      // Intentar click en "Mostrar más" si existe
+      try {
+        const mas = page.locator('button:has-text("Mostrar más"), button:has-text("Ver más"), a:has-text("Más lugares")').first();
+        if ((await mas.count()) > 0 && (await mas.isVisible())) {
+          await mas.click({ timeout: 2000 });
+          await page.waitForTimeout(1200);
+          continue;
+        }
+      } catch {}
     } else {
       estancado = 0;
     }
