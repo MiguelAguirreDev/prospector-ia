@@ -548,7 +548,7 @@ export async function buscarMaps(
   maxPorBusqueda: number = 20,
   opciones: { headless?: boolean; esperaMs?: number; enriquecerDetalles?: boolean; concurrencia?: number } = {}
 ): Promise<MapsNegocio[]> {
-  const headless = opciones.headless ?? process.env.PROSPECTOR_MAPS_HEADLESS !== '0';
+  const headless = opciones.headless ?? false; // por defecto navegador VISIBLE (como el scraper de escritorio)
   const esperaMs = opciones.esperaMs ?? 20000;
   const enriquecerDetalles = opciones.enriquecerDetalles !== false; // por defecto true (para obtener web)
   const concurrencia = opciones.concurrencia ?? 4;
