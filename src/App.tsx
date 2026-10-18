@@ -332,9 +332,7 @@ function VisualEmailStatus({ email, dominio }: { email: string; dominio: string 
 
 export default function App() {
   const [stats, setStats] = useState<Stats>({ empresas: 0, con_email: 0, verificado: 0, con_telefono: 0, dominios_vistos: 0 });
-  const [consultas, setConsultas] = useState<string>(
-    'administradoras de edificios Pocitos Montevideo\ninmobiliarias Cordón Montevideo\ninmobiliarias Ciudad de la Costa'
-  );
+  const [consultas, setConsultas] = useState<string>('');
   const [autoBarrios, setAutoBarrios] = useState<boolean>(false);
   const [maxPorTanda, setMaxPorTanda] = useState<number>(20);
   const [zona, setZona] = useState<string>('');
@@ -400,15 +398,7 @@ export default function App() {
 
   // Load initial defaults
   useEffect(() => {
-    fetch('/api/consultas-default')
-      .then(r => r.json())
-      .then(d => {
-        if (d.consultas && d.consultas.length) {
-          setConsultas(d.consultas.join('\n'));
-        }
-      })
-      .catch(() => {});
-
+    // No cargar consultas por defecto: el buscador inicia vacío
     cargarStats();
     cargarListas();
     cargarEmpresas();
