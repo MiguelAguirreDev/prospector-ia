@@ -67,19 +67,21 @@ Marcá **“Buscar también en Google Maps”** y el motor, además de los busca
 cookies, hace scroll y lee cada ficha:
 
 - **nombre**, **teléfono** (celular → se marca **WhatsApp**), **dirección** y **categoría**;
-- y, abriendo el detalle de cada negocio, **su sitio web** (que en la lista de Maps ya no
-  se muestra).
-
-Con ese sitio web, el negocio entra al rastreo normal: se busca el **email** en la web y,
-si no aparece, se usa la **IA** de respaldo. **Maps no da el email**; por eso el correo
-siempre sale de la web del negocio (o queda vacío).
+- y, **en modo rápido** (por defecto), lee el sitio web directamente de la tarjeta sin
+  abrir cada ficha — esto es **muy rápido** (estilo scraper de escritorio). Si querés el
+  detalle completo de cada negocio, desactivá el modo rápido (la IA revisa más a fondo,
+  pero es más lento).
+- Con ese sitio web, el negocio entra al rastreo normal: se busca el **email** en la web y,
+  si no aparece, se usa la **IA** de respaldo. **Maps no da el email**; por eso el correo
+  siempre sale de la web del negocio (o queda vacío).
 
 - Si el negocio **no publica web** en Maps, se guarda igual con **teléfono/WhatsApp y
   dirección** (útil para llamar), y con la IA activada se intenta **descubrir su sitio por
   nombre** para poder rastrear el email.
 - Es **más lento** (una consulta a Maps tarda ~30–50 s), por eso viene **desactivado**.
-- Para **ver** el navegador mientras busca, en `encender.sh` descomentá
-  `export PROSPECTOR_MAPS_HEADLESS=0`.
+- Para **ver** el navegador de Chromium mientras busca, marcá la casilla **“Mostrar
+  navegador de Maps”** (solo disponible si Maps está activado). Aparecerá una ventana del
+  navegador en tu escritorio.
 
 > ⚠️ El scraping de Google Maps **va contra los Términos de Servicio de Google** y es
 > frágil (Google cambia el diseño). Se incluye como fuente de descubrimiento adicional.

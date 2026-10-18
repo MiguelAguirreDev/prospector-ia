@@ -217,7 +217,7 @@ app.get('/api/verificar-email', async (req: Request, res: Response) => {
 });
 
 app.post('/api/buscar', (req: Request, res: Response) => {
-  const { consultas, max = 20, zona = '', usar_ia = true, lista_nombre = '', lista_auto = true, modo_rapido = true, usar_maps = false } = req.body;
+  const { consultas, max = 20, zona = '', usar_ia = true, lista_nombre = '', lista_auto = true, modo_rapido = true, usar_maps = false, usar_maps_visible = false } = req.body;
   const validConsultas = (consultas || []).map((c: string) => c.trim()).filter(Boolean);
 
   if (!validConsultas.length) {
@@ -225,14 +225,14 @@ app.post('/api/buscar', (req: Request, res: Response) => {
   }
 
   const ok = iniciarTarea('Buscando empresas...', () =>
-    lanzarTareaBuscar(validConsultas, Number(max), zona, Boolean(usar_ia), lista_nombre, Boolean(lista_auto), Boolean(modo_rapido), Boolean(usar_maps))
+    lanzarTareaBuscar(validConsultas, Number(max), zona, Boolean(usar_ia), lista_nombre, Boolean(lista_auto), Boolean(modo_rapido), Boolean(usar_maps), Boolean(usar_maps_visible))
   );
 
   res.json(ok ? { ok: true } : { error: 'Ya hay una tarea corriendo.' });
 });
 
 app.post('/api/continuo', (req: Request, res: Response) => {
-  const { consultas, auto_barrios = false, max = 20, zona = '', usar_ia = true, lista_nombre = '', lista_auto = true, modo_rapido = true, usar_maps = false } = req.body;
+  const { consultas, auto_barrios = false, max = 20, zona = '', usar_ia = true, lista_nombre = '', lista_auto = true, modo_rapido = true, usar_maps = false, usar_maps_visible = false } = req.body;
   const validConsultas = (consultas || []).map((c: string) => c.trim()).filter(Boolean);
 
   if (!validConsultas.length && !auto_barrios) {
@@ -249,7 +249,8 @@ app.post('/api/continuo', (req: Request, res: Response) => {
       lista_nombre,
       Boolean(lista_auto),
       Boolean(modo_rapido),
-      Boolean(usar_maps)
+      Boolean(usar_maps),
+      Boolean(usar_maps_visible)
     )
   );
 

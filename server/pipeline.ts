@@ -276,7 +276,8 @@ export async function procesarConsulta(
   usarIA: boolean,
   modoRapido: boolean,
   listas: string[],
-  usarMaps: boolean = false
+  usarMaps: boolean = false,
+  usarMapsVisible: boolean = false
 ): Promise<Empresa[]> {
   monitor.poner({ fase: 'buscando', consulta });
   agregarLog(`🔎 Buscando en fuentes paralelas: "${consulta}" (meta: ${maxNuevos} nuevas)`);
@@ -300,9 +301,11 @@ export async function procesarConsulta(
       const tMaps = Date.now();
       // Modo rápido: NO abre detalle de cada ficha (lee todo de la tarjeta).
       // Esto es mucho más rápido (estilo scraper del escritorio).
+      // Si usarMapsVisible, el navegador de Chromium se ve mientras busca.
       const negocios = await buscarMaps(consulta, Math.max(8, Math.min(30, maxNuevos + 6)), {
         enriquecerDetalles: false,
         concurrencia: 2,
+        headless: !usarMapsVisible,
       });
       const items = negocios.map(mapsASearchResult).filter(r => r.dominio);
       resultados.unshift(...items);
@@ -590,7 +593,8 @@ export async function lanzarTareaBuscar(
   listaNombre: string,
   listaAuto: boolean,
   modoRapido: boolean,
-  usarMaps: boolean = false
+  usarMaps: boolean = false,
+  usarMapsVisible: boolean = false
 ): Promise<void> {
   let totalNuevas = 0;
   agregarLog(`=== Iniciando búsqueda de ${consultas.length} consulta(s) a alta velocidad ===`);
@@ -604,7 +608,7 @@ export async function lanzarTareaBuscar(
       consultas_totales: consultas.length,
     });
 
-    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps);
+    const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible);
     totalNuevas += guardadas.length;
     agregarLog(`-> ${guardadas.length} nuevas de "${c}" (listas: ${listas.join(', ')})`);
   }
@@ -629,7 +633,8 @@ export async function lanzarTareaContinua(
   listaNombre: string,
   listaAuto: boolean,
   modoRapido: boolean,
-  usarMaps: boolean = false
+  usarMaps: boolean = false,
+  usarMapsVisible: boolean = false
 ): Promise<void> {
   const listaConsultas = autoBarrios ? generarConsultasAuto() : consultas;
   agregarLog(
@@ -652,7 +657,7 @@ export async function lanzarTareaContinua(
         consultas_totales: listaConsultas.length,
       });
 
-      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps);
+      const guardadas = await procesarConsulta(c, maxN, zona, usarIA, modoRapido, listas, usarMaps, usarMapsVisible);
       nuevasEnEstaVuelta += guardadas.length;
       totalNuevasGlobal += guardadas.length;
       agregarLog(`[Vuelta ${vuelta}] -> ${guardadas.length} nuevas de "${c}"`);

@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Building2,
   MapPin,
+  Monitor,
   Layers,
   MessageSquare,
   Filter,
@@ -340,6 +341,7 @@ export default function App() {
   const [usarIA, setUsarIA] = useState<boolean>(true);
   const [modoRapido, setModoRapido] = useState<boolean>(true);
   const [usarMaps, setUsarMaps] = useState<boolean>(false);
+  const [mapsVisible, setMapsVisible] = useState<boolean>(false);
   const [listaNombre, setListaNombre] = useState<string>('');
   const [listaAuto, setListaAuto] = useState<boolean>(true);
 
@@ -491,6 +493,7 @@ export default function App() {
       usar_ia: usarIA,
       modo_rapido: modoRapido,
       usar_maps: usarMaps,
+      usar_maps_visible: mapsVisible,
       lista_nombre: listaNombre,
       lista_auto: listaAuto,
     };
@@ -525,6 +528,7 @@ export default function App() {
       usar_ia: usarIA,
       modo_rapido: modoRapido,
       usar_maps: usarMaps,
+      usar_maps_visible: mapsVisible,
       lista_nombre: listaNombre,
       lista_auto: listaAuto,
     };
@@ -927,6 +931,20 @@ export default function App() {
                 <span className="flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-sky-400" /> Buscar también en Google Maps
                   <span className="text-[10px] text-[#8b949e]">(más lento)</span>
+                </span>
+              </label>
+
+              <label className={`flex items-center gap-2 text-xs ${!usarMaps ? 'opacity-50' : ''} cursor-pointer ${!usarMaps ? 'not-allowed' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={mapsVisible}
+                  onChange={e => setMapsVisible(e.target.checked)}
+                  disabled={corriendo || !usarMaps}
+                  className="rounded text-emerald-500"
+                />
+                <span className="flex items-center gap-1">
+                  <Monitor className="w-3.5 h-3.5 text-blue-400" /> Mostrar navegador de Maps
+                  <span className="text-[10px] text-[#8b949e]">(ventana de Chromium)</span>
                 </span>
               </label>
             </div>
