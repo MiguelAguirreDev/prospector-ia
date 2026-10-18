@@ -21,6 +21,10 @@ import {
   exportarCompleto,
   exportarUnaLista,
   exportarTodasLasListas,
+  exportarJSONCompleto,
+  exportarJSONLista,
+  exportarCSVCompleto,
+  exportarCSVLista,
 } from './server/exporter.js';
 import { nombresProveedoresIA } from './server/ai.js';
 
@@ -376,6 +380,28 @@ app.post('/api/exportar_lista', (req: Request, res: Response) => {
   const exp = exportarUnaLista(nombre);
   agregarLog(`💾 Lista "${nombre}" exportada (${exp.total} empresas)`);
   res.json({ ok: true, ...exp });
+});
+
+app.post('/api/exportar_csv', (req: Request, res: Response) => {
+  const nombre = (req.body.nombre || '').trim();
+  try {
+    const exp = nombre ? exportarCSVLista(nombre) : exportarCSVCompleto();
+    agregarLog(`💾 CSV exportado (${exp.total} empresas)`);
+    res.json({ ok: true, ...exp });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || 'Error al exportar CSV' });
+  }
+});
+
+app.post('/api/exportar_json', (req: Request, res: Response) => {
+  const nombre = (req.body.nombre || '').trim();
+  try {
+    const exp = nombre ? exportarJSONLista(nombre) : exportarJSONCompleto();
+    agregarLog(`💾 JSON exportado (${exp.total} empresas)`);
+    res.json({ ok: true, ...exp });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || 'Error al exportar JSON' });
+  }
 });
 
 app.post('/api/borrar_lista', (req: Request, res: Response) => {

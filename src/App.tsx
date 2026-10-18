@@ -781,6 +781,36 @@ export default function App() {
     }
   };
 
+  const exportarCSV = async (nombreLista?: string) => {
+    const res = await fetch('/api/exportar_csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: nombreLista || '' }),
+    }).then(r => r.json());
+    if (res.ok) {
+      const archivo = (res.ruta || '').split('/').pop() || 'empresas.csv';
+      window.open(`/api/descargar?archivo=${encodeURIComponent(archivo.includes('/') ? archivo : `listas/${archivo}`)}`, '_blank');
+      toast(`CSV exportado (${res.total} empresas).`, 'ok');
+    } else {
+      toast(res.error || 'Error al exportar CSV', 'err');
+    }
+  };
+
+  const exportarJSON = async (nombreLista?: string) => {
+    const res = await fetch('/api/exportar_json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: nombreLista || '' }),
+    }).then(r => r.json());
+    if (res.ok) {
+      const archivo = (res.ruta || '').split('/').pop() || 'empresas.json';
+      window.open(`/api/descargar?archivo=${encodeURIComponent(archivo.includes('/') ? archivo : `listas/${archivo}`)}`, '_blank');
+      toast(`JSON exportado (${res.total} empresas).`, 'ok');
+    } else {
+      toast(res.error || 'Error al exportar JSON', 'err');
+    }
+  };
+
   const exportarListaItem = async (nombre: string) => {
     const res = await fetch('/api/exportar_lista', {
       method: 'POST',
@@ -1608,6 +1638,33 @@ export default function App() {
                 </div>
               </button>
 
+              <button
+                onClick={() => exportarCSV()}
+                className="flex items-center gap-2 p-3 rounded-xl bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs text-left transition group"
+                title="Exportar base completa a CSV (UTF-8 con BOM, para Excel/CRM)"
+              >
+                <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400 group-hover:scale-105 transition">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-semibold text-white">Exportar CSV</div>
+                  <div className="text-[10px] text-[#8b949e]">Base completa a CSV</div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => exportarJSON()}
+                className="flex items-center gap-2 p-3 rounded-xl bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-xs text-left transition group"
+                title="Exportar base completa a JSON (para integración con CRMs/APIs)"
+              >
+                <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 group-hover:scale-105 transition">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-semibold text-white">Exportar JSON</div>
+                  <div className="text-[10px] text-[#8b949e]">Base completa a JSON</div>
+                </div>
+              </button>
               <a
                 href="/api/descargar?archivo=empresas.xlsx"
                 download

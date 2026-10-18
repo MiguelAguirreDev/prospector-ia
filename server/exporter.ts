@@ -150,3 +150,43 @@ export function exportarTodasLasListas(): string[] {
   }
   return generados;
 }
+
+/** Exporta la base completa a JSON (para integración con CRMs externos). */
+export function exportarJSONCompleto(): { ruta: string; total: number } {
+  asegurarDirectorios();
+  const empresas = db.listar(10000);
+  const ruta = path.join(SALIDA_DIR, 'empresas.json');
+  fs.writeFileSync(ruta, JSON.stringify(empresas, null, 2), 'utf-8');
+  return { ruta, total: empresas.length };
+}
+
+/** Exporta una lista a JSON (para integración con CRMs externos). */
+export function exportarJSONLista(nombreLista: string): { ruta: string; total: number } {
+  asegurarDirectorios();
+  const empresas = db.empresasDeLista(nombreLista);
+  const seguro = limpiarNombreArchivo(nombreLista);
+  const ruta = path.join(SALIDA_LISTAS_DIR, `${seguro}.json`);
+  fs.writeFileSync(ruta, JSON.stringify(empresas, null, 2), 'utf-8');
+  return { ruta, total: empresas.length };
+}
+
+/** Exporta la base completa a CSV (para integración con CRMs externos). */
+export function exportarCSVCompleto(): { ruta: string; total: number } {
+  asegurarDirectorios();
+  const empresas = db.listar(10000);
+  const filas = empresas.map(filaEmpresa);
+  const ruta = path.join(SALIDA_DIR, 'empresas.csv');
+  fs.writeFileSync(ruta, generarCSV(CABECERAS_ENRIQUECIDAS, filas), 'utf-8');
+  return { ruta, total: empresas.length };
+}
+
+/** Exporta una lista a CSV (para integración con CRMs externos). */
+export function exportarCSVLista(nombreLista: string): { ruta: string; total: number } {
+  asegurarDirectorios();
+  const empresas = db.empresasDeLista(nombreLista);
+  const filas = empresas.map(filaEmpresa);
+  const seguro = limpiarNombreArchivo(nombreLista);
+  const ruta = path.join(SALIDA_LISTAS_DIR, `${seguro}.csv`);
+  fs.writeFileSync(ruta, generarCSV(CABECERAS_ENRIQUECIDAS, filas), 'utf-8');
+  return { ruta, total: empresas.length };
+}
