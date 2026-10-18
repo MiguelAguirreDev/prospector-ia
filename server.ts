@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
 import { createServer as createViteServer } from 'vite';
-import { db } from './server/db.js';
+import { db, NotificacionesConfig } from './server/db.js';
 import {
   appState,
   monitor,
@@ -433,6 +433,52 @@ app.post('/api/reiniciar', (req: Request, res: Response) => {
   const r = db.reiniciarTodo();
   agregarLog(`🗑️ Base de datos reiniciada: se borraron ${r.empresasBorradas} empresa(s) y ${r.listasBorradas} lista(s).`);
   res.json({ ok: true, empresas_borradas: r.empresasBorradas, listas_borradas: r.listasBorradas });
+});
+
+// Notificaciones
+app.get('/api/notificaciones', (req: Request, res: Response) => {
+  res.json(db.obtenerNotificaciones());
+});
+
+app.post('/api/notificaciones', (req: Request, res: Response) => {
+  const config: NotificacionesConfig = {
+    webhook_url: (req.body.webhook_url || '').trim(),
+    email: (req.body.email || '').trim(),
+    activo: Boolean(req.body.activo),
+    solo_alta_prioridad: req.body.solo_alta_prioridad !== false,
+  };
+  db.guardarNotificaciones(config);
+  agregarLog(`🔔 Configuración de notificaciones actualizada (webhook: ${config.webhook_url ? 'sí' : 'no'}, email: ${config.email || 'no'})`);
+  res.json({ ok: true, config });
+});
+
+app.post('/api/notificaciones/probar', async (req: Request, res: Response) => {
+  const config = db.obtenerNotificaciones();
+  if (!config.webhook_url) {
+    return res.status(400).json({ error: 'No hay webhook configurado.' });
+  }
+  try {
+    const payload = {
+      evento: 'prueba',
+      mensaje: 'Esta es una notificación de prueba de Prospector IA.',
+      fecha: new Date().toISOString(),
+      empresas_nuevas: 0,
+      con_email: 0,
+      con_telefono: 0,
+    };
+    const r = await fetch(config.webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      res.json({ ok: true, mensaje: 'Webhook enviado correctamente.' });
+    } else {
+      res.status(500).json({ ok: false, error: `Webhook respondió con status ${r.status}` });
+    }
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message || 'Error al enviar webhook' });
+  }
 });
 
 app.post('/api/check', (req: Request, res: Response) => {

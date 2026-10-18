@@ -79,6 +79,13 @@ export interface BusquedaHistorial {
   vuelta?: number;
 }
 
+export interface NotificacionesConfig {
+  webhook_url: string;
+  email: string;
+  activo: boolean;
+  solo_alta_prioridad: boolean;
+}
+
 export interface DBData {
   empresas: Empresa[];
   dominios: Record<string, DominioVisto>;
@@ -88,6 +95,7 @@ export interface DBData {
   uso_ia: Record<string, number>;
   siguiente_id_empresa: number;
   siguiente_id_lista: number;
+  notificaciones: NotificacionesConfig;
 }
 
 const DATOS_DIR = path.resolve(process.cwd(), 'datos');
@@ -107,6 +115,14 @@ export class BaseDatos {
         this.data = JSON.parse(raw);
         if (!Array.isArray(this.data.busquedas)) {
           this.data.busquedas = [];
+        }
+        if (!this.data.notificaciones) {
+          this.data.notificaciones = {
+            webhook_url: '',
+            email: '',
+            activo: false,
+            solo_alta_prioridad: true,
+          };
         }
       } catch (err) {
         console.error('Error loading DB file, initializing fresh:', err);
@@ -128,6 +144,12 @@ export class BaseDatos {
       uso_ia: {},
       siguiente_id_empresa: 1,
       siguiente_id_lista: 1,
+      notificaciones: {
+        webhook_url: '',
+        email: '',
+        activo: false,
+        solo_alta_prioridad: true,
+      },
     };
   }
 
@@ -406,6 +428,25 @@ export class BaseDatos {
   /** Empresas guardadas que todavía no tienen email (para el rescate). */
   public sinEmail(): Empresa[] {
     return this.data.empresas.filter(e => !e.email);
+  }
+
+  /** Obtiene la configuración de notificaciones. */
+  public obtenerNotificaciones(): NotificacionesConfig {
+    if (!this.data.notificaciones) {
+      this.data.notificaciones = {
+        webhook_url: '',
+        email: '',
+        activo: false,
+        solo_alta_prioridad: true,
+      };
+    }
+    return this.data.notificaciones;
+  }
+
+  /** Guarda la configuración de notificaciones. */
+  public guardarNotificaciones(config: NotificacionesConfig): void {
+    this.data.notificaciones = config;
+    this.guardar();
   }
 
   /** Crea o registra una nueva búsqueda en el historial */

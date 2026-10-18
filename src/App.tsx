@@ -36,6 +36,7 @@ import {
   Server,
   AtSign,
   Send,
+  Bell,
   History,
   RotateCcw,
 } from 'lucide-react';
@@ -375,6 +376,13 @@ export default function App() {
   const [listaAuto, setListaAuto] = useState<boolean>(true);
   const [filtrosCondiciones, setFiltrosCondiciones] = useState<string>('');
 
+  // Notificaciones
+  const [notifWebhook, setNotifWebhook] = useState<string>('');
+  const [notifEmail, setNotifEmail] = useState<string>('');
+  const [notifActivo, setNotifActivo] = useState<boolean>(false);
+  const [notifSoloAlta, setNotifSoloAlta] = useState<boolean>(true);
+  const [notifGuardando, setNotifGuardando] = useState<boolean>(false);
+  const [notifProbando, setNotifProbando] = useState<boolean>(false);
   const [corriendo, setCorriendo] = useState<boolean>(false);
   const [tituloTarea, setTituloTarea] = useState<string>('');
   const [resultadoTarea, setResultadoTarea] = useState<string>('');
@@ -576,6 +584,7 @@ export default function App() {
     cargarListas();
     cargarEmpresas();
     cargarHistorial();
+    cargarNotificaciones();
   }, []);
 
   // Poll state and logs
@@ -808,6 +817,65 @@ export default function App() {
       toast(`JSON exportado (${res.total} empresas).`, 'ok');
     } else {
       toast(res.error || 'Error al exportar JSON', 'err');
+    }
+  };
+
+  // Notificaciones
+  const cargarNotificaciones = async () => {
+    try {
+      const res = await fetch('/api/notificaciones').then(r => r.json());
+      setNotifWebhook(res.webhook_url || '');
+      setNotifEmail(res.email || '');
+      setNotifActivo(res.activo || false);
+      setNotifSoloAlta(res.solo_alta_prioridad !== false);
+    } catch {}
+  };
+
+  const guardarNotificaciones = async () => {
+    setNotifGuardando(true);
+    try {
+      const res = await fetch('/api/notificaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webhook_url: notifWebhook,
+          email: notifEmail,
+          activo: notifActivo,
+          solo_alta_prioridad: notifSoloAlta,
+        }),
+      }).then(r => r.json());
+      if (res.ok) {
+        toast('Configuración de notificaciones guardada.', 'ok');
+      } else {
+        toast(res.error || 'Error al guardar notificaciones', 'warn');
+      }
+    } catch {
+      toast('Error al guardar notificaciones', 'err');
+    } finally {
+      setNotifGuardando(false);
+    }
+  };
+
+  const probarWebhook = async () => {
+    if (!notifWebhook.trim()) {
+      toast('Ingresá un webhook URL primero.', 'warn');
+      return;
+    }
+    setNotifProbando(true);
+    try {
+      const res = await fetch('/api/notificaciones/probar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).then(r => r.json());
+      if (res.ok) {
+        toast(res.mensaje || 'Webhook enviado correctamente.', 'ok');
+      } else {
+        toast(res.error || 'Error al probar webhook', 'warn');
+      }
+    } catch {
+      toast('Error al probar webhook', 'err');
+    } finally {
+      setNotifProbando(false);
     }
   };
 
@@ -1253,6 +1321,80 @@ export default function App() {
                   placeholder="Ej: egresado UTU EUTM"
                   className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
                 />
+              </div>
+            </div>
+
+            {/* SECCIÓN: NOTIFICACIONES */}
+            <div className="pt-3 border-t border-[#30363d] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-amber-400" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#c9d1d9]">Notificaciones</h4>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-[#c9d1d9] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notifActivo}
+                    onChange={e => setNotifActivo(e.target.checked)}
+                    disabled={corriendo}
+                    className="rounded text-emerald-500"
+                  />
+                  <span>Activas</span>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-xs text-[#8b949e] mb-1">Webhook URL (Discord, Slack, n8n, etc.)</label>
+                <input
+                  type="text"
+                  value={notifWebhook}
+                  onChange={e => setNotifWebhook(e.target.value)}
+                  disabled={corriendo}
+                  placeholder="https://discord.com/api/webhooks/..."
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-[#8b949e] mb-1">Email para alertas (opcional)</label>
+                <input
+                  type="email"
+                  value={notifEmail}
+                  onChange={e => setNotifEmail(e.target.value)}
+                  disabled={corriendo}
+                  placeholder="tu@email.com"
+                  className="w-full bg-[#0d1117] border border-[#30363d] rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-xs text-[#8b949e] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifSoloAlta}
+                  onChange={e => setNotifSoloAlta(e.target.checked)}
+                  disabled={corriendo}
+                  className="rounded text-emerald-500"
+                />
+                <span>Solo notificar si hay empresas nuevas</span>
+              </label>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={guardarNotificaciones}
+                  disabled={corriendo || notifGuardando}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-medium text-xs text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 transition"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{notifGuardando ? 'Guardando...' : 'Guardar'}</span>
+                </button>
+                <button
+                  onClick={probarWebhook}
+                  disabled={corriendo || notifProbando || !notifWebhook.trim()}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-medium text-xs text-[#c9d1d9] bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] disabled:opacity-40 transition"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{notifProbando ? 'Probando...' : 'Probar Webhook'}</span>
+                </button>
               </div>
             </div>
 

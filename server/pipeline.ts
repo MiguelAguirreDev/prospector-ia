@@ -733,6 +733,16 @@ export async function lanzarTareaBuscar(
   const stats = db.estadisticas();
   agregarLog(`Estado actual: ${JSON.stringify(stats)}`);
   appState.resultado = `${totalNuevas} empresas acumuladas (${estadoFinal === 'pausada' ? 'Pausada' : 'Completada'})`;
+
+  // Notificación al webhook (si está configurado)
+  await enviarNotificacion({
+    nombre: consultas.slice(0, 2).join(' + ') + (zona ? ` (${zona})` : ''),
+    empresas_nuevas: totalNuevas,
+    con_email: monitor.data.con_email,
+    con_telefono: monitor.data.con_telefono,
+    consultas,
+    modo: 'simple',
+  });
   if (estadoFinal === 'pausada') {
     agregarLog(`⏸️ Búsqueda guardada y pausada. Podés continuarla cuando quieras desde el Historial.`);
   } else {
@@ -861,6 +871,16 @@ export async function lanzarTareaContinua(
   exportarTodasLasListas();
   appState.resultado = `${totalNuevasGlobal} empresas procesadas en modo continuo (${estadoFinal === 'pausada' ? 'Pausada' : 'Completada'})`;
   agregarLog(`=== Modo Continuo finalizado. Estado: ${estadoFinal}. Total acumulado: ${totalNuevasGlobal} ===`);
+
+  // Notificación al webhook (si está configurado)
+  await enviarNotificacion({
+    nombre: autoBarrios ? 'Todos los barrios' : consultas.slice(0, 2).join(' + ') + (zona ? ` (${zona})` : ''),
+    empresas_nuevas: totalNuevasGlobal,
+    con_email: monitor.data.con_email,
+    con_telefono: monitor.data.con_telefono,
+    consultas: autoBarrios ? [] : consultas,
+    modo: 'continuo',
+  });
 }
 
 /**
@@ -958,6 +978,43 @@ export async function lanzarTareaRescatarEmails(usarIA: boolean): Promise<void> 
   const stats = db.estadisticas();
   agregarLog(`=== Rescate terminado: ${encontrados} email(s) nuevos. Estado: ${JSON.stringify(stats)} ===`);
   appState.resultado = `${encontrados} emails rescatados`;
+}
+
+/** Envía una notificación al webhook configurado (si está activo) al finalizar una búsqueda. */
+async function enviarNotificacion(resumen: {
+  nombre: string;
+  empresas_nuevas: number;
+  con_email: number;
+  con_telefono: number;
+  consultas?: string[];
+  modo?: string;
+}): Promise<void> {
+  const config = db.obtenerNotificaciones();
+  if (!config.activo || !config.webhook_url) return;
+
+  // Si es solo alta prioridad, verificar que haya empresas nuevas
+  if (config.solo_alta_prioridad && resumen.empresas_nuevas === 0) return;
+
+  try {
+    const payload = {
+      evento: 'busqueda_finalizada',
+      mensaje: `Búsqueda "${resumen.nombre}" finalizada`,
+      fecha: new Date().toISOString(),
+      empresas_nuevas: resumen.empresas_nuevas,
+      con_email: resumen.con_email,
+      con_telefono: resumen.con_telefono,
+      consultas: resumen.consultas,
+      modo: resumen.modo,
+    };
+    await fetch(config.webhook_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    agregarLog(`🔔 Notificación enviada al webhook.`);
+  } catch (err: any) {
+    agregarLog(`[!] Error al enviar notificación: ${err?.message || err}`);
+  }
 }
 
 export function iniciarTarea(nombre: string, fn: () => Promise<void>): boolean {
